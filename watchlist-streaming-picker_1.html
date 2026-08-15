@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Where to Watch — Watchlist</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --bg: #16130F;
+    --bg-raised: #201B14;
+    --bg-inset: #0F0D0A;
+    --ink: #F3EEE3;
+    --ink-muted: #A89F8C;
+    --ink-faint: #6B6152;
+    --gold: #E8A33D;
+    --gold-dim: #6B4E22;
+    --velvet: #7A2331;
+    --velvet-bright: #A9384B;
+    --line: #362E23;
+    --radius: 10px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin: 0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse at top, rgba(232,163,61,0.06), transparent 60%);
+    color: var(--ink);
+    font-family: 'Work Sans', sans-serif;
+    padding: 32px 20px 64px;
+    min-height: 100vh;
+  }
+
+  .wrap{ max-width: 880px; margin: 0 auto; }
+
+  /* --- Marquee header --- */
+  .marquee{
+    text-align: center;
+    padding: 28px 16px 22px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+    margin-bottom: 28px;
+    position: relative;
+  }
+  .marquee-title{
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    letter-spacing: 0.08em;
+    color: var(--gold);
+    margin: 0;
+    text-shadow: 0 0 18px rgba(232,163,61,0.35);
+  }
+  .marquee-sub{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-top: 6px;
+  }
+  .bulb-row{
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .bulb-row span{
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--gold-dim);
+  }
+  .bulb-row span:nth-child(3n+1){ background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+
+  /* --- Panels --- */
+  .panel{
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+    margin-bottom: 20px;
+  }
+  .panel h2{
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.04em;
+    font-size: 1.3rem;
+    margin: 0 0 4px;
+    color: var(--ink);
+  }
+  .panel .hint{
+    font-size: 0.85rem;
+    color: var(--ink-muted);
+    margin: 0 0 16px;
+  }
+
+  /* --- Import controls --- */
+  .import-row{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type="file"]{ color: var(--ink-muted); font-size: 0.85rem; max-width: 100%; }
+  textarea{
+    width: 100%;
+    min-height: 90px;
+    background: var(--bg-inset);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--ink);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    padding: 10px 12px;
+    margin-top: 12px;
+    resize: vertical;
+  }
+  textarea:focus-visible, input:focus-visible, button:focus-visible{
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+
+  button{
+    font-family: 'Work Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-inset);
+    color: var(--ink);
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.1s ease;
+  }
+  button:hover{ border-color: var(--gold-dim); }
+  button:active{ transform: translateY(1px); }
+  button.primary{
+    background: var(--velvet);
+    border-color: var(--velvet-bright);
+    color: #F8E9D9;
+  }
+  button.primary:hover{ background: var(--velvet-bright); }
+  button.ghost{ background: transparent; color: var(--ink-muted); }
+  button:disabled{ opacity: 0.45; cursor: not-allowed; }
+
+  .status{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+    margin-top: 10px;
+    min-height: 1em;
+  }
+  .status.ok{ color: var(--gold); }
+
+  /* --- Marquee bulb toggles (service picker) --- */
+  .bulb-grid{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+    gap: 10px;
+  }
+  .bulb{
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--bg-inset);
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .bulb-dot{
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--gold-dim);
+    flex-shrink: 0;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+  .bulb-label{ font-size: 0.83rem; color: var(--ink-muted); transition: color 0.15s ease; }
+
+  .bulb.on{ border-color: var(--gold); background: rgba(232,163,61,0.08); }
+  .bulb.on .bulb-dot{ background: var(--gold); box-shadow: 0 0 8px var(--gold), 0 0 2px var(--gold); }
+  .bulb.on .bulb-label{ color: var(--ink); }
+
+  .custom-service-row{ display:flex; gap:8px; margin-top: 14px; }
+  .custom-service-row input[type="text"]{
+    flex: 1;
+    background: var(--bg-inset);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--ink);
+    padding: 9px 12px;
+    font-size: 0.83rem;
+    font-family: 'Work Sans', sans-serif;
+  }
+
+  /* --- Watchlist ticket stubs --- */
+  .list-head{
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .list-count{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+  }
+  ul.tickets{ list-style: none; margin: 14px 0 0; padding: 0; max-height: 360px; overflow-y: auto; }
+  ul.tickets li{
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 10px 4px;
+    border-bottom: 1px dashed var(--line);
+    font-size: 0.9rem;
+  }
+  ul.tickets li:last-child{ border-bottom: none; }
+  ul.tickets .t-name{ color: var(--ink); }
+  ul.tickets .t-year-inline{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-left: 6px;
+  }
+  ul.tickets .t-result{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+    text-align: right;
+    max-width: 130px;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+  .empty-state{
+    text-align: center;
+    padding: 30px 10px;
+    color: var(--ink-faint);
+    font-size: 0.85rem;
+  }
+
+  .footer-row{
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+    margin-top: 18px;
+  }
+
+  @media (max-width: 480px){
+    .panel{ padding: 16px; }
+    .marquee{ padding: 22px 12px 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="marquee">
+    <p class="marquee-title">WHERE TO WATCH</p>
+    <p class="marquee-sub">your list, your services, no scrolling six apps to find it</p>
+    <div class="bulb-row">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Your List</h2>
+    <p class="hint">Upload your Letterboxd watchlist export, or paste the CSV contents directly.</p>
+    <div class="import-row">
+      <input type="file" id="csvFile" accept=".csv,text/csv">
+      <button class="ghost" id="clearList" type="button">Clear saved list</button>
+    </div>
+    <p class="status" id="importStatus"></p>
+  </div>
+
+  <div class="panel">
+    <h2>Add a Film</h2>
+    <p class="hint">One title, or a bunch — one per line. "Dune" or "Dune, 2021" or "Dune (2021)" all work.</p>
+    <textarea id="quickAddArea" placeholder="Dune, 2021&#10;The Brutalist&#10;Nosferatu (2024)"></textarea>
+    <div class="import-row" style="margin-top:12px;">
+      <button class="primary" id="quickAddBtn" type="button">Add to list</button>
+    </div>
+    <p class="status" id="quickAddStatus"></p>
+  </div>
+
+  <div class="panel">
+    <h2>Streaming Services</h2>
+    <p class="hint">Tap to light up what you've got. Saved automatically.</p>
+    <div class="bulb-grid" id="bulbGrid"></div>
+    <div class="custom-service-row">
+      <input type="text" id="customServiceInput" placeholder="Add a service (e.g. MUBI, Kanopy)">
+      <button id="addCustomService" type="button">Add</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="list-head">
+      <h2 style="margin-bottom:0;">The List</h2>
+      <span class="list-count" id="listCount">0 films</span>
+    </div>
+    <ul class="tickets" id="ticketList"></ul>
+    <div class="empty-state" id="emptyState">Nothing loaded yet — upload a CSV above to get started.</div>
+
+    <div class="footer-row">
+      <span class="status" id="serviceStatus"></span>
+      <button class="primary" id="refreshBtn" type="button" disabled title="Streaming lookups are the next step">Refresh Showtimes</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const LS_LIST = 'watchlist:films';
+  const LS_SERVICES = 'watchlist:services';
+
+  const DEFAULT_SERVICES = [
+    'Netflix', 'Max', 'Hulu', 'Prime Video', 'Disney+',
+    'Apple TV+', 'Paramount+', 'Peacock', 'Criterion Channel', 'Shudder'
+  ];
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- storage ----------
+  function loadFilms(){
+    try {
+      const raw = localStorage.getItem(LS_LIST);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e){ return []; }
+  }
+  function saveFilms(films){
+    localStorage.setItem(LS_LIST, JSON.stringify(films));
+  }
+  function loadServices(){
+    try {
+      const raw = localStorage.getItem(LS_SERVICES);
+      if (raw) return JSON.parse(raw);
+    } catch(e){}
+    // first run: seed defaults, all off
+    return DEFAULT_SERVICES.map(name => ({ name, on: false }));
+  }
+  function saveServices(services){
+    localStorage.setItem(LS_SERVICES, JSON.stringify(services));
+  }
+
+  let films = loadFilms();
+  let services = loadServices();
+
+  // ---------- rendering: watchlist ----------
+  function renderFilms(){
+    const list = $('ticketList');
+    const empty = $('emptyState');
+    const count = $('listCount');
+    list.innerHTML = '';
+    count.textContent = films.length + (films.length === 1 ? ' film' : ' films');
+
+    if (!films.length){
+      empty.style.display = 'block';
+      $('refreshBtn').disabled = true;
+      return;
+    }
+    empty.style.display = 'none';
+    $('refreshBtn').disabled = false;
+
+    films.forEach(f => {
+      const li = document.createElement('li');
+
+      const name = document.createElement('span');
+      name.className = 't-name';
+      name.textContent = f.name;
+      if (f.year){
+        const yearSpan = document.createElement('span');
+        yearSpan.className = 't-year-inline';
+        yearSpan.textContent = '(' + f.year + ')';
+        name.appendChild(yearSpan);
+      }
+
+      const result = document.createElement('span');
+      result.className = 't-result';
+      result.textContent = '—'; // placeholder until step 2 wires in streaming lookups
+
+      li.appendChild(name);
+      li.appendChild(result);
+      list.appendChild(li);
+    });
+  }
+
+  // ---------- rendering: service bulbs ----------
+  function renderServices(){
+    const grid = $('bulbGrid');
+    grid.innerHTML = '';
+    services.forEach((svc, i) => {
+      const bulb = document.createElement('div');
+      bulb.className = 'bulb' + (svc.on ? ' on' : '');
+      bulb.setAttribute('role', 'button');
+      bulb.setAttribute('tabindex', '0');
+      bulb.setAttribute('aria-pressed', svc.on ? 'true' : 'false');
+
+      const dot = document.createElement('span');
+      dot.className = 'bulb-dot';
+      const label = document.createElement('span');
+      label.className = 'bulb-label';
+      label.textContent = svc.name;
+
+      bulb.appendChild(dot);
+      bulb.appendChild(label);
+
+      const toggle = () => {
+        services[i].on = !services[i].on;
+        saveServices(services);
+        renderServices();
+        updateServiceStatus();
+      };
+      bulb.addEventListener('click', toggle);
+      bulb.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); }
+      });
+
+      grid.appendChild(bulb);
+    });
+  }
+
+  function updateServiceStatus(){
+    const on = services.filter(s => s.on).map(s => s.name);
+    $('serviceStatus').textContent = on.length
+      ? on.length + ' service' + (on.length === 1 ? '' : 's') + ' selected'
+      : 'No services selected yet';
+  }
+
+  // ---------- CSV parsing ----------
+  function ingestParsedRows(rows, sourceLabel){
+    const parsed = rows
+      .map(r => ({
+        name: (r.Name || r.name || '').trim(),
+        year: (r.Year || r.year || '').toString().trim()
+      }))
+      .filter(r => r.name.length > 0);
+
+    if (!parsed.length){
+      setImportStatus('No films found in that file — check it is a Letterboxd export.', false);
+      return;
+    }
+    films = parsed;
+    saveFilms(films);
+    renderFilms();
+    setImportStatus('Loaded ' + films.length + ' films from ' + sourceLabel + '.', true);
+  }
+
+  function setImportStatus(msg, ok){
+    const el = $('importStatus');
+    el.textContent = msg;
+    el.className = 'status' + (ok ? ' ok' : '');
+  }
+
+  $('csvFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => ingestParsedRows(results.data, 'file')
+    });
+  });
+
+  function parseQuickAddLine(line){
+    line = line.trim();
+    if (!line) return null;
+    // "Title (Year)"
+    let m = line.match(/^(.*?)\s*\((\d{4})\)\s*$/);
+    if (m) return { name: m[1].trim(), year: m[2] };
+    // "Title, Year" or "Title - Year"
+    m = line.match(/^(.*?)[,\-–]\s*(\d{4})\s*$/);
+    if (m) return { name: m[1].trim(), year: m[2] };
+    // just a title, no year
+    return { name: line, year: '' };
+  }
+
+  $('quickAddBtn').addEventListener('click', () => {
+    const raw = $('quickAddArea').value;
+    const lines = raw.split('\n').map(parseQuickAddLine).filter(Boolean);
+    if (!lines.length){
+      setQuickAddStatus('Type a title first.', false);
+      return;
+    }
+    let added = 0;
+    lines.forEach(entry => {
+      const dupe = films.some(f =>
+        f.name.toLowerCase() === entry.name.toLowerCase() &&
+        (f.year || '') === (entry.year || '')
+      );
+      if (!dupe){ films.push(entry); added++; }
+    });
+    saveFilms(films);
+    renderFilms();
+    $('quickAddArea').value = '';
+    if (added === 0){
+      setQuickAddStatus('Already on your list.', false);
+    } else {
+      setQuickAddStatus('Added ' + added + (added === 1 ? ' film.' : ' films.'), true);
+    }
+  });
+
+  function setQuickAddStatus(msg, ok){
+    const el = $('quickAddStatus');
+    el.textContent = msg;
+    el.className = 'status' + (ok ? ' ok' : '');
+  }
+
+  $('clearList').addEventListener('click', () => {
+    films = [];
+    saveFilms(films);
+    renderFilms();
+    setImportStatus('Cleared. Upload a new CSV whenever you are ready.', false);
+  });
+
+  $('addCustomService').addEventListener('click', () => {
+    const input = $('customServiceInput');
+    const name = input.value.trim();
+    if (!name) return;
+    if (services.some(s => s.name.toLowerCase() === name.toLowerCase())){
+      input.value = '';
+      return;
+    }
+    services.push({ name, on: true });
+    saveServices(services);
+    renderServices();
+    updateServiceStatus();
+    input.value = '';
+  });
+  $('customServiceInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter'){ e.preventDefault(); $('addCustomService').click(); }
+  });
+
+  $('refreshBtn').addEventListener('click', () => {
+    $('serviceStatus').textContent = 'Streaming lookup is step 2 — not wired up yet.';
+  });
+
+  // ---------- init ----------
+  renderFilms();
+  renderServices();
+  updateServiceStatus();
+  if (films.length){
+    setImportStatus('Loaded ' + films.length + ' films from your last session.', true);
+  }
+})();
+</script>
+</body>
+</html>
