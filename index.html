@@ -184,6 +184,14 @@
   .bulb.on{ border-color: var(--gold); background: rgba(232,163,61,0.08); }
   .bulb.on .bulb-dot{ background: var(--gold); box-shadow: 0 0 8px var(--gold), 0 0 2px var(--gold); }
   .bulb.on .bulb-label{ color: var(--ink); }
+  .bulb-remove{
+    color: var(--ink-faint);
+    font-size: 0.7rem;
+    padding: 2px 4px;
+    margin-left: 2px;
+    border-radius: 4px;
+  }
+  .bulb-remove:hover{ color: var(--velvet-bright); }
 
   .custom-service-row{ display:flex; gap:8px; margin-top: 14px; }
   .custom-service-row input[type="text"]{
@@ -227,7 +235,7 @@
     font-size: 0.72rem;
     color: var(--ink-faint);
     text-align: right;
-    max-width: 150px;
+    max-width: 190px;
     flex-shrink: 0;
     line-height: 1.4;
   }
@@ -305,6 +313,17 @@
       <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener" class="hint" style="text-decoration:underline;">Get a TMDB key ↗</a>
       <a href="https://api.watchmode.com/" target="_blank" rel="noopener" class="hint" style="text-decoration:underline;">Get a Watchmode key ↗</a>
     </div>
+    <div style="margin-top:14px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg-inset);">
+      <p class="hint" style="margin:0 0 8px; color:var(--ink-muted); font-weight:600;">New to TMDB? Getting a free key takes about a minute:</p>
+      <ol style="margin:0; padding-left:18px; font-size:0.8rem; color:var(--ink-muted); line-height:1.7;">
+        <li>Create a free account at themoviedb.org, then verify your email.</li>
+        <li>Go to your account <strong>Settings → API</strong> (or use the link above).</li>
+        <li>Click <strong>Create</strong> / <strong>Request an API Key</strong> and choose <strong>Developer</strong> — describe it as personal/non-commercial use.</li>
+        <li>On the API settings page you'll see two values. Copy the one labeled <strong>"API Key (v3 auth)"</strong> — a short string of letters and numbers.</li>
+        <li>Don't copy the <strong>"API Read Access Token"</strong> — that's the long one starting with <code>eyJ</code>, and it won't work here.</li>
+        <li>Paste the short key into the TMDB field above and hit Save — it'll confirm it's working.</li>
+      </ol>
+    </div>
     <p class="status" id="keyStatus"></p>
   </div>
 
@@ -344,15 +363,34 @@
   const LS_TMDB_KEY = 'watchlist:tmdbKey';
   const LS_WM_KEY = 'watchlist:watchmodeKey';
   const LS_RESULTS = 'watchlist:results';
+  const LS_RESULTS_VERSION = 'watchlist:resultsVersion';
+  const RESULTS_SCHEMA_VERSION = 2; // bump whenever the shape of a cached result changes
 
   const DEFAULT_SERVICES = [
-    'Netflix', 'Max', 'Hulu', 'Amazon Prime Video', 'Disney Plus',
+    'Netflix', 'HBO Max', 'Hulu', 'Amazon Prime Video', 'Disney Plus',
     'Apple TV Plus', 'Paramount Plus', 'Peacock', 'Criterion Channel', 'Shudder'
   ];
 
   const $ = (id) => document.getElementById(id);
 
   function filmKey(f){ return (f.name || '').trim().toLowerCase() + '|' + (f.year || '').trim(); }
+
+  // Normalizes service names so "Apple TV+" / "Apple TV Plus", "Disney+" / "Disney Plus",
+  // "Prime Video" / "Amazon Prime Video" etc. are recognized as the same service.
+  function normalizeServiceName(name){
+    return (name || '')
+      .toLowerCase()
+      .replace(/\+/g, ' plus')
+      .replace(/[^a-z0-9]/g, '');
+  }
+  function servicesMatch(a, b){
+    const na = normalizeServiceName(a), nb = normalizeServiceName(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    // containment catches "Prime Video" <-> "Amazon Prime Video" style prefixes
+    if (na.length >= 5 && nb.length >= 5 && (na.includes(nb) || nb.includes(na))) return true;
+    return false;
+  }
 
   // ---------- storage ----------
   function loadFilms(){
@@ -367,7 +405,19 @@
   function loadServices(){
     try {
       const raw = localStorage.getItem(LS_SERVICES);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // One-time migration: WBD reverted the "Max" rebrand back to "HBO Max"
+        // in summer 2026 — this isn't a naming-variant, it's a real rename,
+        // so it needs an explicit fix rather than relying on fuzzy matching.
+        parsed.forEach(s => {
+          if (normalizeServiceName(s.name) === 'max'){
+            s.name = 'HBO Max';
+            s.tmdbId = null; // let it re-resolve against fresh TMDB data
+          }
+        });
+        return parsed;
+      }
     } catch(e){}
     // first run: seed defaults, all off
     return DEFAULT_SERVICES.map(name => ({ name, on: false }));
@@ -387,6 +437,12 @@
   }
   function loadResultsCache(){
     try {
+      const storedVersion = parseInt(localStorage.getItem(LS_RESULTS_VERSION) || '0', 10);
+      if (storedVersion !== RESULTS_SCHEMA_VERSION){
+        localStorage.setItem(LS_RESULTS_VERSION, String(RESULTS_SCHEMA_VERSION));
+        localStorage.removeItem(LS_RESULTS);
+        return {};
+      }
       const raw = localStorage.getItem(LS_RESULTS);
       return raw ? JSON.parse(raw) : {};
     } catch(e){ return {}; }
@@ -456,9 +512,16 @@
       const label = document.createElement('span');
       label.className = 'bulb-label';
       label.textContent = svc.name;
+      const remove = document.createElement('span');
+      remove.className = 'bulb-remove';
+      remove.textContent = '✕';
+      remove.title = 'Remove ' + svc.name;
+      remove.setAttribute('role', 'button');
+      remove.setAttribute('tabindex', '0');
 
       bulb.appendChild(dot);
       bulb.appendChild(label);
+      bulb.appendChild(remove);
 
       const toggle = () => {
         services[i].on = !services[i].on;
@@ -466,9 +529,20 @@
         renderServices();
         updateServiceStatus();
       };
+      const removeService = (e) => {
+        e.stopPropagation();
+        services.splice(i, 1);
+        saveServices(services);
+        renderServices();
+        updateServiceStatus();
+      };
       bulb.addEventListener('click', toggle);
       bulb.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); }
+      });
+      remove.addEventListener('click', removeService);
+      remove.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); removeService(e); }
       });
 
       grid.appendChild(bulb);
@@ -507,22 +581,61 @@
     el.innerHTML = '';
     el.className = 't-result';
     let mainText = '—';
+    let href = res.link || null;
+
     if (res.stream){
-      mainText = 'Stream';
+      const names = (res.streamServices && res.streamServices.length) ? res.streamServices.join(', ') : 'a service you have';
+      mainText = '▶ Streaming: ' + names;
       el.classList.add('stream');
-    } else if (res.rentPrice || res.buyPrice || res.rentAvailable || res.buyAvailable){
-      const parts = [];
-      if (res.rentPrice) parts.push('Rent $' + res.rentPrice);
-      else if (res.rentAvailable) parts.push('Rent');
-      if (res.buyPrice) parts.push('Buy $' + res.buyPrice);
-      else if (res.buyAvailable) parts.push('Buy');
-      mainText = parts.join(' · ');
-      el.classList.add('transact');
+      el.style.fontSize = '0.85rem';
+      el.style.fontWeight = '600';
     } else {
-      mainText = 'Not available';
-      el.classList.add('none');
+      el.style.fontSize = '';
+      el.style.fontWeight = '';
+      const rentPriceKnown = res.rentPrice != null;
+      const buyPriceKnown = res.buyPrice != null;
+      const hasTransact = (res.rentServices && res.rentServices.length) || (res.buyServices && res.buyServices.length);
+
+      if (rentPriceKnown || buyPriceKnown){
+        const parts = [];
+        if (rentPriceKnown) parts.push('Rent $' + res.rentPrice);
+        if (buyPriceKnown) parts.push('Buy $' + res.buyPrice);
+        mainText = parts.join(' · ');
+        href = res.rentLink || res.buyLink || res.link || null;
+        el.classList.add('transact');
+      } else if (hasTransact){
+        mainText = 'Rent or buy →';
+        el.classList.add('transact');
+      } else {
+        mainText = 'Not available';
+        el.classList.add('none');
+      }
     }
-    el.appendChild(document.createTextNode(mainText));
+
+    if (href){
+      const a = document.createElement('a');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = mainText;
+      a.style.color = 'inherit';
+      a.style.textDecoration = 'underline';
+      a.style.textUnderlineOffset = '2px';
+      el.appendChild(a);
+    } else {
+      el.appendChild(document.createTextNode(mainText));
+    }
+
+    if (res.debugTitle){
+      const dbg = document.createElement('span');
+      dbg.className = 't-ambiguous';
+      dbg.style.color = 'var(--ink-faint)';
+      dbg.style.cursor = 'help';
+      const allSvc = (res.debugAllFlatrate && res.debugAllFlatrate.length) ? res.debugAllFlatrate.join(', ') : 'none listed';
+      dbg.title = 'TMDB matched: ' + res.debugTitle + ' (' + (res.debugYear || '?') + ', id ' + res.debugId + ')\nAll subscription services TMDB lists (not just yours): ' + allSvc;
+      dbg.textContent = 'ⓘ match info';
+      el.appendChild(dbg);
+    }
     if (res.ambiguous){
       const flag = document.createElement('span');
       flag.className = 't-ambiguous';
@@ -595,13 +708,19 @@
       const sources = await sourcesResp.json();
       if (!Array.isArray(sources)) return null;
 
-      let rentPrice = null, buyPrice = null;
+      let rentPrice = null, buyPrice = null, rentLink = null, buyLink = null;
       sources.forEach(s => {
         if (s.region !== 'US' || typeof s.price !== 'number') return;
-        if (s.type === 'rent' && (rentPrice === null || s.price < rentPrice)) rentPrice = s.price;
-        if (s.type === 'buy' && (buyPrice === null || s.price < buyPrice)) buyPrice = s.price;
+        if (s.type === 'rent' && (rentPrice === null || s.price < rentPrice)){
+          rentPrice = s.price;
+          rentLink = s.web_url || null;
+        }
+        if (s.type === 'buy' && (buyPrice === null || s.price < buyPrice)){
+          buyPrice = s.price;
+          buyLink = s.web_url || null;
+        }
       });
-      return { rentPrice, buyPrice };
+      return { rentPrice, buyPrice, rentLink, buyLink };
     } catch(e){
       return null; // silent fallback — Watchmode may not support browser CORS
     }
@@ -617,24 +736,70 @@
         setFilmResult(f, { status: 'notfound' });
         return;
       }
-      const primary = candidates[0];
-      const providers = await tmdbWatchProviders(primary.id);
 
-      const selectedNames = services.filter(s => s.on).map(s => s.name.toLowerCase());
-      const flatrate = (providers.flatrate || []).map(p => p.provider_name);
+      // Try each candidate until one actually has provider data — the
+      // first result TMDB returns isn't always the one with data attached.
+      let primary = candidates[0];
+      let providers = await tmdbWatchProviders(primary.id);
+      let hasData = (providers.flatrate || []).length || (providers.rent || []).length || (providers.buy || []).length;
+      if (!hasData && candidates.length > 1){
+        for (let i = 1; i < candidates.length; i++){
+          const alt = await tmdbWatchProviders(candidates[i].id);
+          const altHasData = (alt.flatrate || []).length || (alt.rent || []).length || (alt.buy || []).length;
+          if (altHasData){
+            primary = candidates[i];
+            providers = alt;
+            hasData = true;
+            break;
+          }
+        }
+      }
+
+      const flatrate = providers.flatrate || [];
       const rent = providers.rent || [];
       const buy = providers.buy || [];
+      const tmdbLink = providers.link || null;
 
-      const stream = flatrate.some(name => selectedNames.includes(name.toLowerCase()));
+      // Self-heal: if a flatrate provider matches one of your services by
+      // normalized name but that service's stored name is a variant
+      // (e.g. "Apple TV+" vs TMDB's "Apple TV Plus"), adopt TMDB's exact
+      // name/id going forward so future exact-match lookups stay reliable.
+      let servicesChanged = false;
+      flatrate.forEach(p => {
+        const svc = services.find(s => !s.tmdbId && servicesMatch(s.name, p.provider_name));
+        if (svc){
+          svc.name = p.provider_name;
+          svc.tmdbId = p.provider_id;
+          servicesChanged = true;
+        }
+      });
+      if (servicesChanged){
+        saveServices(services);
+        renderServices();
+      }
+
+      const onServices = services.filter(s => s.on);
+      const matchedStream = flatrate.filter(p =>
+        onServices.some(s => servicesMatch(s.name, p.provider_name))
+      );
+      const stream = matchedStream.length > 0;
 
       const res = {
         status: 'ok',
         stream,
-        rentAvailable: rent.length > 0,
-        buyAvailable: buy.length > 0,
-        ambiguous: candidates.length > 1,
+        streamServices: matchedStream.map(p => p.provider_name),
+        link: tmdbLink,
+        rentServices: rent.map(p => p.provider_name),
+        buyServices: buy.map(p => p.provider_name),
+        ambiguous: candidates.length > 1 && !hasData,
         rentPrice: null,
-        buyPrice: null
+        buyPrice: null,
+        rentLink: null,
+        buyLink: null,
+        debugTitle: primary.title,
+        debugYear: (primary.release_date || '').slice(0, 4),
+        debugId: primary.id,
+        debugAllFlatrate: flatrate.map(p => p.provider_name)
       };
 
       if (!stream && keys.watchmode && (rent.length || buy.length)){
@@ -642,6 +807,8 @@
         if (pricing){
           res.rentPrice = pricing.rentPrice;
           res.buyPrice = pricing.buyPrice;
+          res.rentLink = pricing.rentLink;
+          res.buyLink = pricing.buyLink;
         }
       }
 
@@ -813,7 +980,7 @@
       }
       const data = await resp.json();
       if (data.results && data.results.length){
-        el.textContent = 'TMDB key works — test search found ' + data.results.length + ' results. Watchmode key ' +
+        el.textContent = 'TMDB key confirmed working (connection test only — unrelated to your watchlist). Watchmode key ' +
           (watchmode ? 'saved (untested — CORS support from a browser is unconfirmed).' : 'not set — rent/buy will show without prices.');
         el.className = 'status ok';
       } else {
@@ -836,21 +1003,35 @@
       const resp = await fetch(url);
       if (!resp.ok) throw new Error('sync failed');
       const data = await resp.json();
+
+      // Filter out obviously transactional-only stores and low-signal niche
+      // platforms — this list only exists to reduce clutter, it's not exhaustive.
+      const NOISE = /\b(store|movies|kids)\b|^(apple tv|google play|microsoft|redbox|plex|vix|aha|sun nxt|docsville|dekkoo|filmzie|magellan tv|broadwayhd|guidedoc|jolt film|found tv|public domain movies|justwatch tv|curiosity stream)$/i;
+
       const real = (data.results || [])
         .sort((a, b) => (a.display_priority || 0) - (b.display_priority || 0))
-        .slice(0, 30)
-        .map(p => p.provider_name);
-      let added = 0;
-      real.forEach(name => {
-        if (!services.some(s => s.name.toLowerCase() === name.toLowerCase())){
-          services.push({ name, on: false });
+        .filter(p => !NOISE.test(p.provider_name))
+        .slice(0, 20);
+
+      let merged = 0, added = 0;
+      real.forEach(p => {
+        const existing = services.find(s => servicesMatch(s.name, p.provider_name));
+        if (existing){
+          if (existing.name !== p.provider_name || existing.tmdbId !== p.provider_id){
+            existing.name = p.provider_name;
+            existing.tmdbId = p.provider_id;
+            merged++;
+          }
+        } else {
+          services.push({ name: p.provider_name, tmdbId: p.provider_id, on: false });
           added++;
         }
       });
       saveServices(services);
       renderServices();
       updateServiceStatus();
-      $('keyStatus').textContent = 'Synced — added ' + added + ' provider name' + (added === 1 ? '' : 's') + ' from TMDB.';
+      $('keyStatus').textContent = 'Synced — reconciled ' + merged + ' existing name' + (merged === 1 ? '' : 's') +
+        ' to match TMDB exactly, added ' + added + ' new provider' + (added === 1 ? '' : 's') + '.';
       $('keyStatus').className = 'status ok';
     } catch(e){
       $('keyStatus').textContent = 'Could not sync providers — check your TMDB key.';
