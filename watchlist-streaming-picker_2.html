@@ -153,6 +153,7 @@
     min-height: 1em;
   }
   .status.ok{ color: var(--gold); }
+  .status.err{ color: var(--velvet-bright); }
 
   /* --- Marquee bulb toggles (service picker) --- */
   .bulb-grid{
@@ -226,9 +227,20 @@
     font-size: 0.72rem;
     color: var(--ink-faint);
     text-align: right;
-    max-width: 130px;
+    max-width: 150px;
     flex-shrink: 0;
     line-height: 1.4;
+  }
+  ul.tickets .t-result.stream{ color: var(--gold); }
+  ul.tickets .t-result.transact{ color: var(--ink-muted); }
+  ul.tickets .t-result.none{ color: var(--ink-faint); }
+  ul.tickets .t-result.pending{ color: var(--ink-faint); font-style: italic; }
+  ul.tickets .t-result.err{ color: var(--velvet-bright); }
+  ul.tickets .t-ambiguous{
+    display: block;
+    font-size: 0.65rem;
+    color: var(--velvet-bright);
+    margin-top: 2px;
   }
   .empty-state{
     text-align: center;
@@ -280,8 +292,28 @@
   </div>
 
   <div class="panel">
+    <h2>API Keys</h2>
+    <p class="hint">TMDB is required — it does the title matching and tells you stream vs. rent vs. buy. Watchmode is optional and only adds real prices; if it doesn't cooperate from a browser, everything else still works. Keys stay in your browser only.</p>
+    <div class="import-row">
+      <input type="text" id="tmdbKeyInput" placeholder="TMDB API key (required)" style="flex:1; min-width:200px; background:var(--bg-inset); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 12px; font-size:0.83rem;">
+    </div>
+    <div class="import-row" style="margin-top:10px;">
+      <input type="text" id="watchmodeKeyInput" placeholder="Watchmode API key (optional, for prices)" style="flex:1; min-width:200px; background:var(--bg-inset); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 12px; font-size:0.83rem;">
+    </div>
+    <div class="import-row" style="margin-top:12px;">
+      <button class="primary" id="saveKeysBtn" type="button">Save keys</button>
+      <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener" class="hint" style="text-decoration:underline;">Get a TMDB key ↗</a>
+      <a href="https://api.watchmode.com/" target="_blank" rel="noopener" class="hint" style="text-decoration:underline;">Get a Watchmode key ↗</a>
+    </div>
+    <p class="status" id="keyStatus"></p>
+  </div>
+
+  <div class="panel">
     <h2>Streaming Services</h2>
     <p class="hint">Tap to light up what you've got. Saved automatically.</p>
+    <div class="import-row" style="margin-bottom:14px;">
+      <button class="ghost" id="syncProvidersBtn" type="button" disabled title="Add a TMDB key first">Sync real service names from TMDB</button>
+    </div>
     <div class="bulb-grid" id="bulbGrid"></div>
     <div class="custom-service-row">
       <input type="text" id="customServiceInput" placeholder="Add a service (e.g. MUBI, Kanopy)">
@@ -299,7 +331,7 @@
 
     <div class="footer-row">
       <span class="status" id="serviceStatus"></span>
-      <button class="primary" id="refreshBtn" type="button" disabled title="Streaming lookups are the next step">Refresh Showtimes</button>
+      <button class="primary" id="refreshBtn" type="button" disabled title="Load a watchlist first">Refresh Showtimes</button>
     </div>
   </div>
 
@@ -309,13 +341,18 @@
 (function(){
   const LS_LIST = 'watchlist:films';
   const LS_SERVICES = 'watchlist:services';
+  const LS_TMDB_KEY = 'watchlist:tmdbKey';
+  const LS_WM_KEY = 'watchlist:watchmodeKey';
+  const LS_RESULTS = 'watchlist:results';
 
   const DEFAULT_SERVICES = [
-    'Netflix', 'Max', 'Hulu', 'Prime Video', 'Disney+',
-    'Apple TV+', 'Paramount+', 'Peacock', 'Criterion Channel', 'Shudder'
+    'Netflix', 'Max', 'Hulu', 'Amazon Prime Video', 'Disney Plus',
+    'Apple TV Plus', 'Paramount Plus', 'Peacock', 'Criterion Channel', 'Shudder'
   ];
 
   const $ = (id) => document.getElementById(id);
+
+  function filmKey(f){ return (f.name || '').trim().toLowerCase() + '|' + (f.year || '').trim(); }
 
   // ---------- storage ----------
   function loadFilms(){
@@ -338,9 +375,30 @@
   function saveServices(services){
     localStorage.setItem(LS_SERVICES, JSON.stringify(services));
   }
+  function loadKeys(){
+    return {
+      tmdb: localStorage.getItem(LS_TMDB_KEY) || '',
+      watchmode: localStorage.getItem(LS_WM_KEY) || ''
+    };
+  }
+  function saveKeys(tmdb, watchmode){
+    localStorage.setItem(LS_TMDB_KEY, tmdb);
+    localStorage.setItem(LS_WM_KEY, watchmode);
+  }
+  function loadResultsCache(){
+    try {
+      const raw = localStorage.getItem(LS_RESULTS);
+      return raw ? JSON.parse(raw) : {};
+    } catch(e){ return {}; }
+  }
+  function saveResultsCache(cache){
+    localStorage.setItem(LS_RESULTS, JSON.stringify(cache));
+  }
 
   let films = loadFilms();
   let services = loadServices();
+  let resultsCache = loadResultsCache();
+  let keys = loadKeys();
 
   // ---------- rendering: watchlist ----------
   function renderFilms(){
@@ -360,6 +418,7 @@
 
     films.forEach(f => {
       const li = document.createElement('li');
+      li.dataset.key = filmKey(f);
 
       const name = document.createElement('span');
       name.className = 't-name';
@@ -373,7 +432,7 @@
 
       const result = document.createElement('span');
       result.className = 't-result';
-      result.textContent = '—'; // placeholder until step 2 wires in streaming lookups
+      applyResultToEl(result, resultsCache[filmKey(f)]);
 
       li.appendChild(name);
       li.appendChild(result);
@@ -423,6 +482,198 @@
       : 'No services selected yet';
   }
 
+  // ---------- result badge rendering ----------
+  function applyResultToEl(el, res){
+    if (!res){
+      el.textContent = '—';
+      el.className = 't-result';
+      return;
+    }
+    if (res.status === 'pending'){
+      el.textContent = 'looking…';
+      el.className = 't-result pending';
+      return;
+    }
+    if (res.status === 'error'){
+      el.textContent = 'lookup failed';
+      el.className = 't-result err';
+      return;
+    }
+    if (res.status === 'notfound'){
+      el.textContent = 'no match found';
+      el.className = 't-result err';
+      return;
+    }
+    el.innerHTML = '';
+    el.className = 't-result';
+    let mainText = '—';
+    if (res.stream){
+      mainText = 'Stream';
+      el.classList.add('stream');
+    } else if (res.rentPrice || res.buyPrice || res.rentAvailable || res.buyAvailable){
+      const parts = [];
+      if (res.rentPrice) parts.push('Rent $' + res.rentPrice);
+      else if (res.rentAvailable) parts.push('Rent');
+      if (res.buyPrice) parts.push('Buy $' + res.buyPrice);
+      else if (res.buyAvailable) parts.push('Buy');
+      mainText = parts.join(' · ');
+      el.classList.add('transact');
+    } else {
+      mainText = 'Not available';
+      el.classList.add('none');
+    }
+    el.appendChild(document.createTextNode(mainText));
+    if (res.ambiguous){
+      const flag = document.createElement('span');
+      flag.className = 't-ambiguous';
+      flag.textContent = '⚠ multiple matches';
+      el.appendChild(flag);
+    }
+  }
+
+  function setFilmResult(f, res){
+    resultsCache[filmKey(f)] = res;
+    const li = document.querySelector('li[data-key="' + CSS.escape(filmKey(f)) + '"]');
+    if (li){
+      const el = li.querySelector('.t-result');
+      if (el) applyResultToEl(el, res);
+    }
+  }
+
+  // ---------- TMDB ----------
+  async function tmdbSearchMovie(title, year){
+    const url = 'https://api.themoviedb.org/3/search/movie?api_key=' + encodeURIComponent(keys.tmdb) +
+      '&query=' + encodeURIComponent(title) + (year ? '&year=' + encodeURIComponent(year) : '');
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('TMDB search failed: ' + resp.status);
+    const data = await resp.json();
+    return data.results || [];
+  }
+
+  async function tmdbWatchProviders(movieId){
+    const url = 'https://api.themoviedb.org/3/movie/' + movieId + '/watch/providers?api_key=' + encodeURIComponent(keys.tmdb);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('TMDB providers failed: ' + resp.status);
+    const data = await resp.json();
+    return (data.results && data.results.US) || {};
+  }
+
+  function pickCandidates(results, year){
+    if (!results.length) return [];
+    if (!year){
+      return results.slice(0, 1);
+    }
+    const exact = results.filter(r => (r.release_date || '').slice(0, 4) === String(year));
+    if (exact.length) return exact.slice(0, 3);
+    // fall back to closest year within 1
+    const near = results.filter(r => {
+      const ry = parseInt((r.release_date || '').slice(0, 4), 10);
+      return ry && Math.abs(ry - parseInt(year, 10)) <= 1;
+    });
+    if (near.length) return near.slice(0, 3);
+    return results.slice(0, 1);
+  }
+
+  // ---------- Watchmode (optional, pricing only) ----------
+
+  async function resolveWatchmodePricing(title, tmdbId){
+    if (!keys.watchmode) return null;
+    try {
+      const searchUrl = 'https://api.watchmode.com/v1/autocomplete-search/?apiKey=' +
+        encodeURIComponent(keys.watchmode) + '&search_value=' + encodeURIComponent(title) + '&search_type=2';
+      const searchResp = await fetch(searchUrl);
+      if (!searchResp.ok) return null;
+      const searchData = await searchResp.json();
+      const candidates = searchData.results || [];
+      const match = candidates.find(c => c.tmdb_id === tmdbId) || candidates[0];
+      if (!match) return null;
+
+      const sourcesUrl = 'https://api.watchmode.com/v1/title/' + match.id + '/sources/?apiKey=' +
+        encodeURIComponent(keys.watchmode) + '&regions=US';
+      const sourcesResp = await fetch(sourcesUrl);
+      if (!sourcesResp.ok) return null;
+      const sources = await sourcesResp.json();
+      if (!Array.isArray(sources)) return null;
+
+      let rentPrice = null, buyPrice = null;
+      sources.forEach(s => {
+        if (s.region !== 'US' || typeof s.price !== 'number') return;
+        if (s.type === 'rent' && (rentPrice === null || s.price < rentPrice)) rentPrice = s.price;
+        if (s.type === 'buy' && (buyPrice === null || s.price < buyPrice)) buyPrice = s.price;
+      });
+      return { rentPrice, buyPrice };
+    } catch(e){
+      return null; // silent fallback — Watchmode may not support browser CORS
+    }
+  }
+
+  // ---------- main lookup for one film ----------
+  async function lookupFilm(f){
+    setFilmResult(f, { status: 'pending' });
+    try {
+      const results = await tmdbSearchMovie(f.name, f.year);
+      const candidates = pickCandidates(results, f.year);
+      if (!candidates.length){
+        setFilmResult(f, { status: 'notfound' });
+        return;
+      }
+      const primary = candidates[0];
+      const providers = await tmdbWatchProviders(primary.id);
+
+      const selectedNames = services.filter(s => s.on).map(s => s.name.toLowerCase());
+      const flatrate = (providers.flatrate || []).map(p => p.provider_name);
+      const rent = providers.rent || [];
+      const buy = providers.buy || [];
+
+      const stream = flatrate.some(name => selectedNames.includes(name.toLowerCase()));
+
+      const res = {
+        status: 'ok',
+        stream,
+        rentAvailable: rent.length > 0,
+        buyAvailable: buy.length > 0,
+        ambiguous: candidates.length > 1,
+        rentPrice: null,
+        buyPrice: null
+      };
+
+      if (!stream && keys.watchmode && (rent.length || buy.length)){
+        const pricing = await resolveWatchmodePricing(f.name, primary.id);
+        if (pricing){
+          res.rentPrice = pricing.rentPrice;
+          res.buyPrice = pricing.buyPrice;
+        }
+      }
+
+      setFilmResult(f, res);
+    } catch(e){
+      setFilmResult(f, { status: 'error' });
+    }
+  }
+
+  async function refreshAll(onlyMissing){
+    if (!keys.tmdb){
+      $('serviceStatus').textContent = 'Add a TMDB API key above first.';
+      return;
+    }
+    const targets = films.filter(f => !onlyMissing || !resultsCache[filmKey(f)] || resultsCache[filmKey(f)].status !== 'ok');
+    if (!targets.length){
+      $('serviceStatus').textContent = 'Everything is already looked up.';
+      return;
+    }
+    $('refreshBtn').disabled = true;
+    let done = 0;
+    for (const f of targets){
+      $('serviceStatus').textContent = 'Checking ' + (done + 1) + ' of ' + targets.length + '…';
+      await lookupFilm(f);
+      saveResultsCache(resultsCache);
+      done++;
+      await new Promise(r => setTimeout(r, 220)); // be polite to the free tier
+    }
+    $('serviceStatus').textContent = 'Done — checked ' + done + ' film' + (done === 1 ? '' : 's') + '.';
+    $('refreshBtn').disabled = false;
+  }
+
   // ---------- CSV parsing ----------
   function ingestParsedRows(rows, sourceLabel){
     const parsed = rows
@@ -451,6 +702,7 @@
   $('csvFile').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    e.target.value = ''; // reset so selecting the same filename again still fires 'change'
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -527,14 +779,94 @@
     if (e.key === 'Enter'){ e.preventDefault(); $('addCustomService').click(); }
   });
 
-  $('refreshBtn').addEventListener('click', () => {
-    $('serviceStatus').textContent = 'Streaming lookup is step 2 — not wired up yet.';
+  $('refreshBtn').addEventListener('click', () => refreshAll(true));
+
+  $('saveKeysBtn').addEventListener('click', async () => {
+    const tmdb = $('tmdbKeyInput').value.trim();
+    const watchmode = $('watchmodeKeyInput').value.trim();
+    keys = { tmdb, watchmode };
+    saveKeys(tmdb, watchmode);
+    $('syncProvidersBtn').disabled = !tmdb;
+    $('syncProvidersBtn').title = tmdb ? '' : 'Add a TMDB key first';
+    const el = $('keyStatus');
+
+    if (!tmdb){
+      el.textContent = 'A TMDB key is required for lookups to work.';
+      el.className = 'status';
+      return;
+    }
+
+    el.textContent = 'Saved. Testing TMDB key…';
+    el.className = 'status';
+    try {
+      const testUrl = 'https://api.themoviedb.org/3/search/movie?api_key=' + encodeURIComponent(tmdb) + '&query=Inception';
+      const resp = await fetch(testUrl);
+      if (resp.status === 401){
+        el.textContent = 'TMDB rejected this key (401). Make sure you copied the "API Key (v3 auth)" — a short string — not the "API Read Access Token" (the long one starting with eyJ...).';
+        el.className = 'status err';
+        return;
+      }
+      if (!resp.ok){
+        el.textContent = 'TMDB returned an error (' + resp.status + '). Double-check the key and try again.';
+        el.className = 'status err';
+        return;
+      }
+      const data = await resp.json();
+      if (data.results && data.results.length){
+        el.textContent = 'TMDB key works — test search found ' + data.results.length + ' results. Watchmode key ' +
+          (watchmode ? 'saved (untested — CORS support from a browser is unconfirmed).' : 'not set — rent/buy will show without prices.');
+        el.className = 'status ok';
+      } else {
+        el.textContent = 'TMDB key accepted, but the test search returned nothing odd — try Refresh Showtimes.';
+        el.className = 'status ok';
+      }
+    } catch(e){
+      el.textContent = 'Could not reach TMDB from this browser (network or CORS error). Check your connection, or open the browser console (F12) for the exact error.';
+      el.className = 'status err';
+    }
+  });
+
+  $('syncProvidersBtn').addEventListener('click', async () => {
+    if (!keys.tmdb) return;
+    $('syncProvidersBtn').disabled = true;
+    $('syncProvidersBtn').textContent = 'Syncing…';
+    try {
+      const url = 'https://api.themoviedb.org/3/watch/providers/movie?api_key=' +
+        encodeURIComponent(keys.tmdb) + '&watch_region=US';
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('sync failed');
+      const data = await resp.json();
+      const real = (data.results || [])
+        .sort((a, b) => (a.display_priority || 0) - (b.display_priority || 0))
+        .slice(0, 30)
+        .map(p => p.provider_name);
+      let added = 0;
+      real.forEach(name => {
+        if (!services.some(s => s.name.toLowerCase() === name.toLowerCase())){
+          services.push({ name, on: false });
+          added++;
+        }
+      });
+      saveServices(services);
+      renderServices();
+      updateServiceStatus();
+      $('keyStatus').textContent = 'Synced — added ' + added + ' provider name' + (added === 1 ? '' : 's') + ' from TMDB.';
+      $('keyStatus').className = 'status ok';
+    } catch(e){
+      $('keyStatus').textContent = 'Could not sync providers — check your TMDB key.';
+      $('keyStatus').className = 'status err';
+    }
+    $('syncProvidersBtn').disabled = false;
+    $('syncProvidersBtn').textContent = 'Sync real service names from TMDB';
   });
 
   // ---------- init ----------
   renderFilms();
   renderServices();
   updateServiceStatus();
+  $('tmdbKeyInput').value = keys.tmdb;
+  $('watchmodeKeyInput').value = keys.watchmode;
+  $('syncProvidersBtn').disabled = !keys.tmdb;
   if (films.length){
     setImportStatus('Loaded ' + films.length + ' films from your last session.', true);
   }
