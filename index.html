@@ -646,8 +646,19 @@
       return;
     }
     if (res.status === 'notfound'){
-      el.textContent = 'no match found';
+      el.innerHTML = '';
       el.className = 't-result err';
+      el.appendChild(document.createTextNode('no match found'));
+      const dbg = document.createElement('span');
+      dbg.className = 't-ambiguous';
+      dbg.style.color = 'var(--ink-faint)';
+      dbg.style.cursor = 'help';
+      let tip = 'Searched TMDB for: "' + (res.debugSearchedAs || '?') + '"';
+      if (res.debugAltTried) tip += '\nAlso tried: "' + res.debugAltTried + '"';
+      tip += '\nRaw results returned: ' + (res.debugRawCount != null ? res.debugRawCount : '0');
+      dbg.title = tip;
+      dbg.textContent = 'ⓘ match info';
+      el.appendChild(dbg);
       return;
     }
     el.innerHTML = '';
@@ -773,8 +784,10 @@
     const trimmed = (title || '').trim();
     let all = await tmdbSearchMovie(trimmed, year);
     const targets = [normalizeTitle(trimmed)];
+    let triedAltTitle = null;
     if (!/^the\s/i.test(trimmed)){
       const altTitle = 'The ' + trimmed;
+      triedAltTitle = altTitle;
       targets.push(normalizeTitle(altTitle));
       try {
         const alt = await tmdbSearchMovie(altTitle, year);
@@ -786,7 +799,9 @@
     const isExact = (r) => targets.includes(normalizeTitle(r.title)) || targets.includes(normalizeTitle(r.original_title));
     const exact = all.filter(isExact).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
     const rest = all.filter(r => !isExact(r)).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-    return exact.concat(rest);
+    const sorted = exact.concat(rest);
+    sorted._searchMeta = { rawCount: all.length, triedAltTitle };
+    return sorted;
   }
 
   async function tmdbWatchProviders(movieId){
@@ -883,7 +898,13 @@
       const results = await tmdbSearchMovieRobust(f.name, f.year);
       const candidates = pickCandidates(results, f.year, f.name);
       if (!candidates.length){
-        setFilmResult(f, { status: 'notfound' });
+        const meta = results._searchMeta || {};
+        setFilmResult(f, {
+          status: 'notfound',
+          debugSearchedAs: f.name + (f.year ? ' (' + f.year + ')' : ''),
+          debugAltTried: meta.triedAltTitle || null,
+          debugRawCount: meta.rawCount != null ? meta.rawCount : results.length
+        });
         return;
       }
 
