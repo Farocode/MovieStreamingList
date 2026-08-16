@@ -659,6 +659,8 @@
         saveServices(services);
         renderServices();
         updateServiceStatus();
+        recomputeCachedMatches();
+        renderFilms();
       };
       const removeService = (e) => {
         e.stopPropagation();
@@ -666,6 +668,8 @@
         saveServices(services);
         renderServices();
         updateServiceStatus();
+        recomputeCachedMatches();
+        renderFilms();
       };
       bulb.addEventListener('click', toggle);
       bulb.addEventListener('keydown', (e) => {
@@ -846,6 +850,29 @@
       const el = li.querySelector('.t-result');
       if (el) applyResultToEl(el, res);
     }
+  }
+
+  // Re-derives "yours vs. not yours" from raw TMDB data already in the
+  // cache, purely against the current service selection. No network calls —
+  // this is what makes toggling a service update results instantly instead
+  // of requiring a re-check (which would also just get skipped as already
+  // cached, since the underlying availability data hasn't changed).
+  function recomputeCachedMatches(){
+    const onServices = services.filter(s => s.on);
+    let touched = false;
+    Object.keys(resultsCache).forEach(key => {
+      const res = resultsCache[key];
+      if (!res || res.status !== 'ok' || !res.debugAllFlatrate) return;
+      const matched = res.debugAllFlatrate.filter(name =>
+        onServices.some(s => servicesMatch(s.name, name))
+      );
+      const other = res.debugAllFlatrate.filter(name => !matched.includes(name));
+      res.stream = matched.length > 0;
+      res.streamServices = matched;
+      res.otherStreamServices = other;
+      touched = true;
+    });
+    if (touched) saveResultsCache(resultsCache);
   }
 
   async function tmdbSearchMovie(title, year){
@@ -1087,6 +1114,8 @@
   }
 
   async function refreshAll(onlyMissing){
+    recomputeCachedMatches();
+    renderFilms();
     if (!keys.tmdb && !proxyUrl){
       $('serviceStatus').textContent = 'Add a TMDB API key or a proxy URL above first.';
       return;
@@ -1211,6 +1240,8 @@
     saveServices(services);
     renderServices();
     updateServiceStatus();
+    recomputeCachedMatches();
+    renderFilms();
     input.value = '';
   });
   $('customServiceInput').addEventListener('keydown', (e) => {
@@ -1390,6 +1421,8 @@
       saveServices(services);
       renderServices();
       updateServiceStatus();
+      recomputeCachedMatches();
+      renderFilms();
       $('keyStatus').textContent = 'Synced — reconciled ' + merged + ' existing name' + (merged === 1 ? '' : 's') +
         ' to match TMDB exactly, added ' + added + ' new provider' + (added === 1 ? '' : 's') + '.';
       $('keyStatus').className = 'status ok';
