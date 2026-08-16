@@ -235,13 +235,34 @@
     font-size: 0.72rem;
     color: var(--ink-faint);
     text-align: right;
-    max-width: 190px;
+    max-width: 260px;
     flex-shrink: 0;
     line-height: 1.4;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
   }
-  ul.tickets .t-result.stream{ color: var(--gold); }
-  ul.tickets .t-result.transact{ color: var(--ink-muted); }
-  ul.tickets .t-result.none{ color: var(--ink-faint); }
+  .stream-pill{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--gold);
+    color: var(--bg-inset);
+    font-family: 'Work Sans', sans-serif;
+    font-weight: 700;
+    font-size: 0.76rem;
+    padding: 4px 11px 4px 9px;
+    border-radius: 999px;
+    box-shadow: 0 0 10px rgba(232,163,61,0.4);
+    text-decoration: none !important;
+    white-space: nowrap;
+  }
+  .stream-pill:hover{ box-shadow: 0 0 14px rgba(232,163,61,0.6); }
+  .inline-transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; white-space: nowrap; }
+  .inline-none{ color: var(--ink-faint); font-size: 0.72rem; opacity: 0.6; white-space: nowrap; }
+  ul.tickets .t-result.transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; }
+  ul.tickets .t-result.none{ color: var(--ink-faint); opacity: 0.6; }
   ul.tickets .t-result.pending{ color: var(--ink-faint); font-style: italic; }
   ul.tickets .t-result.err{ color: var(--velvet-bright); }
   ul.tickets .t-ambiguous{
@@ -280,28 +301,65 @@
   </div>
 
   <div class="panel">
-    <h2>Your List</h2>
-    <p class="hint">Upload your Letterboxd watchlist export, or paste the CSV contents directly.</p>
-    <div class="import-row">
-      <input type="file" id="csvFile" accept=".csv,text/csv">
-      <button class="ghost" id="clearList" type="button">Clear saved list</button>
+    <div class="list-head">
+      <h2 style="margin-bottom:0;">The List</h2>
+      <span class="list-count" id="listCount">0 films</span>
     </div>
-    <p class="status" id="importStatus"></p>
+    <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0; font-size:0.85rem; color:var(--ink-muted); cursor:pointer;">
+      <input type="checkbox" id="streamOnlyFilter" style="accent-color: var(--gold); width:15px; height:15px;">
+      Only show what's streaming on my services (hide rent/buy/unavailable)
+    </label>
+    <ul class="tickets" id="ticketList"></ul>
+    <div class="empty-state" id="emptyState">Nothing loaded yet — add films below to get started.</div>
+    <div class="empty-state" id="filteredEmptyState" style="display:none;">Nothing streaming on your selected services yet — try Refresh Showtimes, or turn the filter off to see rent/buy options too.</div>
+
+    <div class="footer-row">
+      <span class="status" id="serviceStatus"></span>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="ghost" id="exportBtn" type="button" disabled title="Load a watchlist first">Export results</button>
+        <button class="primary" id="refreshBtn" type="button" disabled title="Load a watchlist first">Refresh Showtimes</button>
+      </div>
+    </div>
   </div>
 
   <div class="panel">
-    <h2>Add a Film</h2>
-    <p class="hint">One title, or a bunch — one per line. "Dune" or "Dune, 2021" or "Dune (2021)" all work.</p>
-    <textarea id="quickAddArea" placeholder="Dune, 2021&#10;The Brutalist&#10;Nosferatu (2024)"></textarea>
-    <div class="import-row" style="margin-top:12px;">
-      <button class="primary" id="quickAddBtn" type="button">Add to list</button>
+    <div style="display:flex; gap:20px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:240px;">
+        <h2 style="font-size:1.1rem;">Import CSV</h2>
+        <p class="hint" style="margin-bottom:10px;">Your Letterboxd watchlist export.</p>
+        <div class="import-row">
+          <input type="file" id="csvFile" accept=".csv,text/csv">
+        </div>
+        <div class="import-row" style="margin-top:10px;">
+          <button class="ghost" id="clearList" type="button">Clear saved list</button>
+        </div>
+        <p class="status" id="importStatus"></p>
+      </div>
+      <div style="flex:1; min-width:240px;">
+        <h2 style="font-size:1.1rem;">Add a Film</h2>
+        <p class="hint" style="margin-bottom:10px;">One title, or a bunch — one per line. "Dune" or "Dune, 2021" both work.</p>
+        <textarea id="quickAddArea" placeholder="Dune, 2021&#10;The Brutalist&#10;Nosferatu (2024)" style="min-height:70px;"></textarea>
+        <div class="import-row" style="margin-top:10px;">
+          <button class="primary" id="quickAddBtn" type="button">Add to list</button>
+        </div>
+        <p class="status" id="quickAddStatus"></p>
+      </div>
     </div>
-    <p class="status" id="quickAddStatus"></p>
   </div>
 
   <div class="panel">
     <h2>API Keys</h2>
     <p class="hint">TMDB is required — it does the title matching and tells you stream vs. rent vs. buy. Watchmode is optional and only adds real prices; if it doesn't cooperate from a browser, everything else still works. Keys stay in your browser only.</p>
+
+    <div style="margin-bottom:16px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg-inset);">
+      <p class="hint" style="margin:0 0 8px; color:var(--ink-muted); font-weight:600;">Have a hosted proxy? Skip personal keys entirely.</p>
+      <div class="import-row">
+        <input type="text" id="proxyUrlInput" placeholder="https://your-worker.yourname.workers.dev" style="flex:1; min-width:200px; background:var(--bg-inset); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 12px; font-size:0.83rem;">
+        <button class="primary" id="saveProxyBtn" type="button">Save proxy</button>
+      </div>
+      <p class="status" id="proxyStatus" style="margin-top:8px;"></p>
+    </div>
+
     <div class="import-row">
       <input type="text" id="tmdbKeyInput" placeholder="TMDB API key (required)" style="flex:1; min-width:200px; background:var(--bg-inset); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 12px; font-size:0.83rem;">
     </div>
@@ -313,17 +371,19 @@
       <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener" class="hint" style="text-decoration:underline;">Get a TMDB key ↗</a>
       <a href="https://api.watchmode.com/" target="_blank" rel="noopener" class="hint" style="text-decoration:underline;">Get a Watchmode key ↗</a>
     </div>
-    <div style="margin-top:14px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg-inset);">
-      <p class="hint" style="margin:0 0 8px; color:var(--ink-muted); font-weight:600;">New to TMDB? Getting a free key takes about a minute:</p>
-      <ol style="margin:0; padding-left:18px; font-size:0.8rem; color:var(--ink-muted); line-height:1.7;">
-        <li>Create a free account at themoviedb.org, then verify your email.</li>
-        <li>Go to your account <strong>Settings → API</strong> (or use the link above).</li>
-        <li>Click <strong>Create</strong> / <strong>Request an API Key</strong> and choose <strong>Developer</strong> — describe it as personal/non-commercial use.</li>
-        <li>On the API settings page you'll see two values. Copy the one labeled <strong>"API Key (v3 auth)"</strong> — a short string of letters and numbers.</li>
-        <li>Don't copy the <strong>"API Read Access Token"</strong> — that's the long one starting with <code>eyJ</code>, and it won't work here.</li>
-        <li>Paste the short key into the TMDB field above and hit Save — it'll confirm it's working.</li>
-      </ol>
-    </div>
+    <details style="margin-top:14px; border:1px solid var(--line); border-radius:8px; background:var(--bg-inset);">
+      <summary style="padding:10px 14px; cursor:pointer; font-size:0.83rem; color:var(--ink-muted); font-weight:600; list-style:revert;">New to TMDB? Click for a 1-minute walkthrough</summary>
+      <div style="padding:0 14px 12px;">
+        <ol style="margin:0; padding-left:18px; font-size:0.8rem; color:var(--ink-muted); line-height:1.7;">
+          <li>Create a free account at themoviedb.org, then verify your email.</li>
+          <li>Go to your account <strong>Settings → API</strong> (or use the link above).</li>
+          <li>Click <strong>Create</strong> / <strong>Request an API Key</strong> and choose <strong>Developer</strong> — describe it as personal/non-commercial use.</li>
+          <li>On the API settings page you'll see two values. Copy the one labeled <strong>"API Key (v3 auth)"</strong> — a short string of letters and numbers.</li>
+          <li>Don't copy the <strong>"API Read Access Token"</strong> — that's the long one starting with <code>eyJ</code>, and it won't work here.</li>
+          <li>Paste the short key into the TMDB field above and hit Save — it'll confirm it's working.</li>
+        </ol>
+      </div>
+    </details>
     <p class="status" id="keyStatus"></p>
   </div>
 
@@ -340,20 +400,6 @@
     </div>
   </div>
 
-  <div class="panel">
-    <div class="list-head">
-      <h2 style="margin-bottom:0;">The List</h2>
-      <span class="list-count" id="listCount">0 films</span>
-    </div>
-    <ul class="tickets" id="ticketList"></ul>
-    <div class="empty-state" id="emptyState">Nothing loaded yet — upload a CSV above to get started.</div>
-
-    <div class="footer-row">
-      <span class="status" id="serviceStatus"></span>
-      <button class="primary" id="refreshBtn" type="button" disabled title="Load a watchlist first">Refresh Showtimes</button>
-    </div>
-  </div>
-
 </div>
 
 <script>
@@ -362,9 +408,10 @@
   const LS_SERVICES = 'watchlist:services';
   const LS_TMDB_KEY = 'watchlist:tmdbKey';
   const LS_WM_KEY = 'watchlist:watchmodeKey';
+  const LS_PROXY_URL = 'watchlist:proxyUrl';
   const LS_RESULTS = 'watchlist:results';
   const LS_RESULTS_VERSION = 'watchlist:resultsVersion';
-  const RESULTS_SCHEMA_VERSION = 2; // bump whenever the shape of a cached result changes
+  const RESULTS_SCHEMA_VERSION = 4; // bump whenever the shape OR matching logic of a cached result changes
 
   const DEFAULT_SERVICES = [
     'Netflix', 'HBO Max', 'Hulu', 'Amazon Prime Video', 'Disney Plus',
@@ -387,8 +434,13 @@
     const na = normalizeServiceName(a), nb = normalizeServiceName(b);
     if (!na || !nb) return false;
     if (na === nb) return true;
-    // containment catches "Prime Video" <-> "Amazon Prime Video" style prefixes
-    if (na.length >= 5 && nb.length >= 5 && (na.includes(nb) || nb.includes(na))) return true;
+    // Explicit aliases only — no loose substring matching. Substring
+    // containment looks tempting (handles "Prime Video" <-> "Amazon Prime
+    // Video") but it also wrongly matches "Paramount Plus" to the separate
+    // "Paramount Plus Premium" tier, and "Apple TV" to "Apple TV Plus".
+    // Those are genuinely different products, so matching has to be explicit.
+    const ALIASES = { 'primevideo': 'amazonprimevideo' };
+    if (ALIASES[na] === nb || ALIASES[nb] === na) return true;
     return false;
   }
 
@@ -435,6 +487,12 @@
     localStorage.setItem(LS_TMDB_KEY, tmdb);
     localStorage.setItem(LS_WM_KEY, watchmode);
   }
+  function loadProxyUrl(){
+    return (localStorage.getItem(LS_PROXY_URL) || '').replace(/\/$/, '');
+  }
+  function saveProxyUrl(url){
+    localStorage.setItem(LS_PROXY_URL, url.replace(/\/$/, ''));
+  }
   function loadResultsCache(){
     try {
       const storedVersion = parseInt(localStorage.getItem(LS_RESULTS_VERSION) || '0', 10);
@@ -455,24 +513,38 @@
   let services = loadServices();
   let resultsCache = loadResultsCache();
   let keys = loadKeys();
+  let proxyUrl = loadProxyUrl();
 
   // ---------- rendering: watchlist ----------
   function renderFilms(){
     const list = $('ticketList');
     const empty = $('emptyState');
+    const filteredEmpty = $('filteredEmptyState');
     const count = $('listCount');
     list.innerHTML = '';
     count.textContent = films.length + (films.length === 1 ? ' film' : ' films');
 
     if (!films.length){
       empty.style.display = 'block';
+      filteredEmpty.style.display = 'none';
       $('refreshBtn').disabled = true;
+      $('exportBtn').disabled = true;
       return;
     }
     empty.style.display = 'none';
     $('refreshBtn').disabled = false;
+    $('exportBtn').disabled = false;
 
-    films.forEach(f => {
+    const streamOnly = $('streamOnlyFilter').checked;
+    const visible = films.filter(f => {
+      if (!streamOnly) return true;
+      const res = resultsCache[filmKey(f)];
+      return res && res.status === 'ok' && res.stream;
+    });
+
+    filteredEmpty.style.display = (streamOnly && !visible.length) ? 'block' : 'none';
+
+    visible.forEach(f => {
       const li = document.createElement('li');
       li.dataset.key = filmKey(f);
 
@@ -580,51 +652,68 @@
     }
     el.innerHTML = '';
     el.className = 't-result';
-    let mainText = '—';
-    let href = res.link || null;
+
+    const row = document.createElement('span');
+    row.style.display = 'flex';
+    row.style.flexWrap = 'wrap';
+    row.style.justifyContent = 'flex-end';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
 
     if (res.stream){
       const names = (res.streamServices && res.streamServices.length) ? res.streamServices.join(', ') : 'a service you have';
-      mainText = '▶ Streaming: ' + names;
-      el.classList.add('stream');
-      el.style.fontSize = '0.85rem';
-      el.style.fontWeight = '600';
-    } else {
-      el.style.fontSize = '';
-      el.style.fontWeight = '';
-      const rentPriceKnown = res.rentPrice != null;
-      const buyPriceKnown = res.buyPrice != null;
-      const hasTransact = (res.rentServices && res.rentServices.length) || (res.buyServices && res.buyServices.length);
+      const pill = document.createElement('a');
+      pill.href = res.link || '#';
+      pill.target = '_blank';
+      pill.rel = 'noopener';
+      pill.className = 'stream-pill';
+      pill.textContent = '🏆 Streaming on ' + names;
+      row.appendChild(pill);
+    }
 
+    // Rent/buy shows alongside streaming too, not just as a fallback —
+    // useful if you'd rather buy outright, or your subscription lapses.
+    const rentPriceKnown = res.rentPrice != null;
+    const buyPriceKnown = res.buyPrice != null;
+    const hasTransact = (res.rentServices && res.rentServices.length) || (res.buyServices && res.buyServices.length);
+
+    if (rentPriceKnown || buyPriceKnown || hasTransact){
+      let transactText;
       if (rentPriceKnown || buyPriceKnown){
         const parts = [];
         if (rentPriceKnown) parts.push('Rent $' + res.rentPrice);
         if (buyPriceKnown) parts.push('Buy $' + res.buyPrice);
-        mainText = parts.join(' · ');
-        href = res.rentLink || res.buyLink || res.link || null;
-        el.classList.add('transact');
-      } else if (hasTransact){
-        mainText = 'Rent or buy →';
-        el.classList.add('transact');
+        transactText = parts.join(' · ');
       } else {
-        mainText = 'Not available';
-        el.classList.add('none');
+        transactText = 'rent or buy →';
       }
+      const transactHref = res.rentLink || res.buyLink || res.link || null;
+      const t = document.createElement('span');
+      t.className = 'inline-transact';
+      if (transactHref){
+        const a = document.createElement('a');
+        a.href = transactHref;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = transactText;
+        a.style.color = 'inherit';
+        a.style.textDecoration = 'underline';
+        a.style.textUnderlineOffset = '2px';
+        t.appendChild(a);
+      } else {
+        t.textContent = transactText;
+      }
+      row.appendChild(t);
     }
 
-    if (href){
-      const a = document.createElement('a');
-      a.href = href;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = mainText;
-      a.style.color = 'inherit';
-      a.style.textDecoration = 'underline';
-      a.style.textUnderlineOffset = '2px';
-      el.appendChild(a);
-    } else {
-      el.appendChild(document.createTextNode(mainText));
+    if (!res.stream && !hasTransact && !rentPriceKnown && !buyPriceKnown){
+      const none = document.createElement('span');
+      none.className = 'inline-none';
+      none.textContent = 'not available';
+      row.appendChild(none);
     }
+
+    el.appendChild(row);
 
     if (res.debugTitle){
       const dbg = document.createElement('span');
@@ -653,27 +742,81 @@
     }
   }
 
-  // ---------- TMDB ----------
   async function tmdbSearchMovie(title, year){
-    const url = 'https://api.themoviedb.org/3/search/movie?api_key=' + encodeURIComponent(keys.tmdb) +
-      '&query=' + encodeURIComponent(title) + (year ? '&year=' + encodeURIComponent(year) : '');
+    let url;
+    if (proxyUrl){
+      url = proxyUrl + '/search?title=' + encodeURIComponent(title) + (year ? '&year=' + encodeURIComponent(year) : '');
+    } else {
+      url = 'https://api.themoviedb.org/3/search/movie?api_key=' + encodeURIComponent(keys.tmdb) +
+        '&query=' + encodeURIComponent(title) + (year ? '&year=' + encodeURIComponent(year) : '');
+    }
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('TMDB search failed: ' + resp.status);
     const data = await resp.json();
     return data.results || [];
   }
 
+  function normalizeTitle(s){
+    return (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  }
+
+  // TMDB's search ranking sometimes puts an obscure, literally-titled match
+  // ahead of a famous film when a leading "The" is dropped (e.g. "Godfather"
+  // vs "The Godfather"). To compensate, we also try "The " + title and merge
+  // both result sets — but popularity can't be the only signal, or a
+  // well-known but *different* film wrongly outranks an exact title match
+  // (e.g. typing "Dolemite" should find the 1975 film "Dolemite", not the
+  // more popular but differently-titled 2019 "Dolemite Is My Name").
+  // So: exact title matches (against either the typed title or the "The "
+  // variant) always come first; popularity only decides ties within a tier.
+  async function tmdbSearchMovieRobust(title, year){
+    const trimmed = (title || '').trim();
+    let all = await tmdbSearchMovie(trimmed, year);
+    const targets = [normalizeTitle(trimmed)];
+    if (!/^the\s/i.test(trimmed)){
+      const altTitle = 'The ' + trimmed;
+      targets.push(normalizeTitle(altTitle));
+      try {
+        const alt = await tmdbSearchMovie(altTitle, year);
+        const seen = new Set(all.map(r => r.id));
+        alt.forEach(r => { if (!seen.has(r.id)){ all.push(r); seen.add(r.id); } });
+      } catch(e){ /* best effort — ignore if the second search fails */ }
+    }
+
+    const isExact = (r) => targets.includes(normalizeTitle(r.title)) || targets.includes(normalizeTitle(r.original_title));
+    const exact = all.filter(isExact).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+    const rest = all.filter(r => !isExact(r)).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+    return exact.concat(rest);
+  }
+
   async function tmdbWatchProviders(movieId){
-    const url = 'https://api.themoviedb.org/3/movie/' + movieId + '/watch/providers?api_key=' + encodeURIComponent(keys.tmdb);
+    let url, viaProxy = !!proxyUrl;
+    if (viaProxy){
+      url = proxyUrl + '/providers?id=' + encodeURIComponent(movieId);
+    } else {
+      url = 'https://api.themoviedb.org/3/movie/' + movieId + '/watch/providers?api_key=' + encodeURIComponent(keys.tmdb);
+    }
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('TMDB providers failed: ' + resp.status);
     const data = await resp.json();
+    if (viaProxy) return (data.results && data.results.US) || {}; // proxy passes through raw TMDB shape
     return (data.results && data.results.US) || {};
   }
 
-  function pickCandidates(results, year){
+  function pickCandidates(results, year, typedTitle){
     if (!results.length) return [];
+    // results are already popularity-sorted by tmdbSearchMovieRobust
     if (!year){
+      // An exact title match should always win over a more popular film
+      // with a similar name (e.g. typing "Dolemite" should find the 1975
+      // classic, not the more famous "Dolemite Is My Name" biopic).
+      // Popularity sort is only a tiebreaker for genuine ambiguity or
+      // when nothing matches exactly (e.g. "Godfather" -> "The Godfather").
+      if (typedTitle){
+        const norm = typedTitle.trim().toLowerCase();
+        const exact = results.filter(r => (r.title || '').trim().toLowerCase() === norm);
+        if (exact.length) return exact.slice(0, 3);
+      }
       return results.slice(0, 1);
     }
     const exact = results.filter(r => (r.release_date || '').slice(0, 4) === String(year));
@@ -690,6 +833,13 @@
   // ---------- Watchmode (optional, pricing only) ----------
 
   async function resolveWatchmodePricing(title, tmdbId){
+    if (proxyUrl){
+      try {
+        const resp = await fetch(proxyUrl + '/price?title=' + encodeURIComponent(title) + '&tmdbId=' + encodeURIComponent(tmdbId));
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch(e){ return null; }
+    }
     if (!keys.watchmode) return null;
     try {
       const searchUrl = 'https://api.watchmode.com/v1/autocomplete-search/?apiKey=' +
@@ -730,8 +880,8 @@
   async function lookupFilm(f){
     setFilmResult(f, { status: 'pending' });
     try {
-      const results = await tmdbSearchMovie(f.name, f.year);
-      const candidates = pickCandidates(results, f.year);
+      const results = await tmdbSearchMovieRobust(f.name, f.year);
+      const candidates = pickCandidates(results, f.year, f.name);
       if (!candidates.length){
         setFilmResult(f, { status: 'notfound' });
         return;
@@ -802,7 +952,7 @@
         debugAllFlatrate: flatrate.map(p => p.provider_name)
       };
 
-      if (!stream && keys.watchmode && (rent.length || buy.length)){
+      if ((proxyUrl || keys.watchmode) && (rent.length || buy.length)){
         const pricing = await resolveWatchmodePricing(f.name, primary.id);
         if (pricing){
           res.rentPrice = pricing.rentPrice;
@@ -819,8 +969,8 @@
   }
 
   async function refreshAll(onlyMissing){
-    if (!keys.tmdb){
-      $('serviceStatus').textContent = 'Add a TMDB API key above first.';
+    if (!keys.tmdb && !proxyUrl){
+      $('serviceStatus').textContent = 'Add a TMDB API key or a proxy URL above first.';
       return;
     }
     const targets = films.filter(f => !onlyMissing || !resultsCache[filmKey(f)] || resultsCache[filmKey(f)].status !== 'ok');
@@ -839,6 +989,7 @@
     }
     $('serviceStatus').textContent = 'Done — checked ' + done + ' film' + (done === 1 ? '' : 's') + '.';
     $('refreshBtn').disabled = false;
+    renderFilms(); // re-apply filter now that results are in
   }
 
   // ---------- CSV parsing ----------
@@ -946,15 +1097,103 @@
     if (e.key === 'Enter'){ e.preventDefault(); $('addCustomService').click(); }
   });
 
+  $('streamOnlyFilter').addEventListener('change', renderFilms);
+
+  function csvEscape(val){
+    val = String(val == null ? '' : val);
+    if (/[",\n]/.test(val)) return '"' + val.replace(/"/g, '""') + '"';
+    return val;
+  }
+
+  $('exportBtn').addEventListener('click', () => {
+    const rows = [['Title', 'Year', 'Status', 'Service(s)', 'Price', 'Link']];
+    films.forEach(f => {
+      const res = resultsCache[filmKey(f)];
+      let status = 'Not checked yet', service = '', price = '', link = '';
+      if (res && res.status === 'ok'){
+        if (res.stream){
+          status = 'Streaming';
+          service = (res.streamServices || []).join('; ');
+          link = res.link || '';
+        } else if (res.rentPrice != null || res.buyPrice != null || (res.rentServices||[]).length || (res.buyServices||[]).length){
+          status = 'Rent/Buy';
+          const priceParts = [];
+          if (res.rentPrice != null) priceParts.push('Rent $' + res.rentPrice);
+          if (res.buyPrice != null) priceParts.push('Buy $' + res.buyPrice);
+          price = priceParts.join(' / ');
+          service = [...(res.rentServices||[]), ...(res.buyServices||[])].join('; ');
+          link = res.rentLink || res.buyLink || res.link || '';
+        } else {
+          status = 'Not available';
+        }
+      } else if (res && res.status === 'notfound'){
+        status = 'No TMDB match';
+      } else if (res && res.status === 'error'){
+        status = 'Lookup failed';
+      }
+      rows.push([f.name, f.year || '', status, service, price, link]);
+    });
+
+    const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = 'watchlist-streaming-results-' + stamp + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
   $('refreshBtn').addEventListener('click', () => refreshAll(true));
+
+  $('saveProxyBtn').addEventListener('click', async () => {
+    const url = $('proxyUrlInput').value.trim();
+    proxyUrl = url.replace(/\/$/, '');
+    saveProxyUrl(proxyUrl);
+    const el = $('proxyStatus');
+    $('syncProvidersBtn').disabled = !proxyUrl && !keys.tmdb;
+
+    if (!proxyUrl){
+      el.textContent = 'Proxy cleared — using personal keys below instead.';
+      el.className = 'status';
+      return;
+    }
+    el.textContent = 'Testing proxy…';
+    el.className = 'status';
+    try {
+      const resp = await fetch(proxyUrl + '/search?title=Inception');
+      if (!resp.ok){
+        el.textContent = 'Proxy responded with an error (' + resp.status + '). Check the Worker is deployed and the URL is right.';
+        el.className = 'status err';
+        return;
+      }
+      const data = await resp.json();
+      if (data.results && data.results.length){
+        el.textContent = 'Proxy works — no personal API key needed. Lookups will use this instead.';
+        el.className = 'status ok';
+      } else if (data.error){
+        el.textContent = 'Proxy reachable, but returned an error: ' + data.error;
+        el.className = 'status err';
+      } else {
+        el.textContent = 'Proxy reachable, but the response looked unexpected — check the Worker code.';
+        el.className = 'status err';
+      }
+    } catch(e){
+      el.textContent = 'Could not reach the proxy URL (network or CORS error). Check ALLOWED_ORIGIN in the Worker matches this site.';
+      el.className = 'status err';
+    }
+  });
 
   $('saveKeysBtn').addEventListener('click', async () => {
     const tmdb = $('tmdbKeyInput').value.trim();
     const watchmode = $('watchmodeKeyInput').value.trim();
     keys = { tmdb, watchmode };
     saveKeys(tmdb, watchmode);
-    $('syncProvidersBtn').disabled = !tmdb;
-    $('syncProvidersBtn').title = tmdb ? '' : 'Add a TMDB key first';
+    $('syncProvidersBtn').disabled = !tmdb && !proxyUrl;
+    $('syncProvidersBtn').title = (tmdb || proxyUrl) ? '' : 'Add a TMDB key or proxy URL first';
     const el = $('keyStatus');
 
     if (!tmdb){
@@ -994,12 +1233,13 @@
   });
 
   $('syncProvidersBtn').addEventListener('click', async () => {
-    if (!keys.tmdb) return;
+    if (!keys.tmdb && !proxyUrl) return;
     $('syncProvidersBtn').disabled = true;
     $('syncProvidersBtn').textContent = 'Syncing…';
     try {
-      const url = 'https://api.themoviedb.org/3/watch/providers/movie?api_key=' +
-        encodeURIComponent(keys.tmdb) + '&watch_region=US';
+      const url = proxyUrl
+        ? proxyUrl + '/provider-list'
+        : 'https://api.themoviedb.org/3/watch/providers/movie?api_key=' + encodeURIComponent(keys.tmdb) + '&watch_region=US';
       const resp = await fetch(url);
       if (!resp.ok) throw new Error('sync failed');
       const data = await resp.json();
@@ -1011,7 +1251,7 @@
       const real = (data.results || [])
         .sort((a, b) => (a.display_priority || 0) - (b.display_priority || 0))
         .filter(p => !NOISE.test(p.provider_name))
-        .slice(0, 20);
+        .slice(0, 25);
 
       let merged = 0, added = 0;
       real.forEach(p => {
@@ -1047,7 +1287,8 @@
   updateServiceStatus();
   $('tmdbKeyInput').value = keys.tmdb;
   $('watchmodeKeyInput').value = keys.watchmode;
-  $('syncProvidersBtn').disabled = !keys.tmdb;
+  $('proxyUrlInput').value = proxyUrl;
+  $('syncProvidersBtn').disabled = !keys.tmdb && !proxyUrl;
   if (films.length){
     setImportStatus('Loaded ' + films.length + ' films from your last session.', true);
   }
