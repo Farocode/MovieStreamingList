@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Where to Watch — Watchlist</title>
+<script>
+  try {
+    if (localStorage.getItem('watchlist:theme') === 'light'){
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  } catch(e){}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
@@ -13,14 +20,30 @@
     --bg-raised: #201B14;
     --bg-inset: #0F0D0A;
     --ink: #F3EEE3;
-    --ink-muted: #A89F8C;
-    --ink-faint: #6B6152;
+    --ink-muted: #C3B9A6;
+    --ink-faint: #948A78;
     --gold: #E8A33D;
     --gold-dim: #6B4E22;
     --velvet: #7A2331;
     --velvet-bright: #A9384B;
     --line: #362E23;
     --radius: 10px;
+    --gold-glow: 232,163,61;
+  }
+
+  :root[data-theme="light"]{
+    --bg: #F3EEE3;
+    --bg-raised: #FFFFFF;
+    --bg-inset: #EAE2D0;
+    --ink: #1C1712;
+    --ink-muted: #4E4638;
+    --ink-faint: #6E6555;
+    --gold: #B9791F;
+    --gold-dim: #E3C388;
+    --velvet: #7A2331;
+    --velvet-bright: #9C2E3F;
+    --line: #DCD2BB;
+    --gold-glow: 185,121,31;
   }
 
   @media (prefers-reduced-motion: reduce){
@@ -33,7 +56,7 @@
     margin: 0;
     background: var(--bg);
     background-image:
-      radial-gradient(ellipse at top, rgba(232,163,61,0.06), transparent 60%);
+      radial-gradient(ellipse at top, rgba(var(--gold-glow),0.06), transparent 60%);
     color: var(--ink);
     font-family: 'Work Sans', sans-serif;
     padding: 32px 20px 64px;
@@ -52,13 +75,27 @@
     margin-bottom: 28px;
     position: relative;
   }
+  .theme-toggle{
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 1rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   .marquee-title{
     font-family: 'Bebas Neue', sans-serif;
     font-size: clamp(2rem, 6vw, 3.2rem);
     letter-spacing: 0.08em;
     color: var(--gold);
     margin: 0;
-    text-shadow: 0 0 18px rgba(232,163,61,0.35);
+    text-shadow: 0 0 18px rgba(var(--gold-glow),0.35);
   }
   .marquee-sub{
     font-family: 'IBM Plex Mono', monospace;
@@ -181,7 +218,7 @@
   }
   .bulb-label{ font-size: 0.83rem; color: var(--ink-muted); transition: color 0.15s ease; }
 
-  .bulb.on{ border-color: var(--gold); background: rgba(232,163,61,0.08); }
+  .bulb.on{ border-color: var(--gold); background: rgba(var(--gold-glow),0.08); }
   .bulb.on .bulb-dot{ background: var(--gold); box-shadow: 0 0 8px var(--gold), 0 0 2px var(--gold); }
   .bulb.on .bulb-label{ color: var(--ink); }
   .bulb-remove{
@@ -254,12 +291,15 @@
     font-size: 0.76rem;
     padding: 4px 11px 4px 9px;
     border-radius: 999px;
-    box-shadow: 0 0 10px rgba(232,163,61,0.4);
+    box-shadow: 0 0 10px rgba(var(--gold-glow),0.4);
     text-decoration: none !important;
-    white-space: nowrap;
+    max-width: 260px;
+    white-space: normal;
+    text-align: left;
   }
-  .stream-pill:hover{ box-shadow: 0 0 14px rgba(232,163,61,0.6); }
+  .stream-pill:hover{ box-shadow: 0 0 14px rgba(var(--gold-glow),0.6); }
   .inline-transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; white-space: nowrap; }
+  .inline-elsewhere{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.7; font-style: italic; white-space: nowrap; }
   .inline-none{ color: var(--ink-faint); font-size: 0.72rem; opacity: 0.6; white-space: nowrap; }
   ul.tickets .t-result.transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; }
   ul.tickets .t-result.none{ color: var(--ink-faint); opacity: 0.6; }
@@ -293,6 +333,7 @@
 <div class="wrap">
 
   <div class="marquee">
+    <button class="theme-toggle" id="themeToggle" type="button" title="Switch theme">🌙</button>
     <p class="marquee-title">WHERE TO WATCH</p>
     <p class="marquee-sub">your list, your services, no scrolling six apps to find it</p>
     <div class="bulb-row">
@@ -411,11 +452,13 @@
   const LS_PROXY_URL = 'watchlist:proxyUrl';
   const LS_RESULTS = 'watchlist:results';
   const LS_RESULTS_VERSION = 'watchlist:resultsVersion';
-  const RESULTS_SCHEMA_VERSION = 4; // bump whenever the shape OR matching logic of a cached result changes
+  const RESULTS_SCHEMA_VERSION = 5; // bump whenever the shape OR matching logic of a cached result changes
+  const LS_THEME = 'watchlist:theme';
 
   const DEFAULT_SERVICES = [
-    'Netflix', 'HBO Max', 'Hulu', 'Amazon Prime Video', 'Disney Plus',
-    'Apple TV Plus', 'Paramount Plus', 'Peacock', 'Criterion Channel', 'Shudder'
+    'Netflix', 'HBO Max', 'Hulu', 'Amazon Prime Video',
+    'Disney Plus', 'Apple TV Plus', 'Paramount Plus', 'Peacock',
+    'Starz', 'AMC Plus', 'Tubi', 'Pluto TV'
   ];
 
   const $ = (id) => document.getElementById(id);
@@ -458,7 +501,7 @@
     try {
       const raw = localStorage.getItem(LS_SERVICES);
       if (raw) {
-        const parsed = JSON.parse(raw);
+        let parsed = JSON.parse(raw);
         // One-time migration: WBD reverted the "Max" rebrand back to "HBO Max"
         // in summer 2026 — this isn't a naming-variant, it's a real rename,
         // so it needs an explicit fix rather than relying on fuzzy matching.
@@ -468,6 +511,22 @@
             s.tmdbId = null; // let it re-resolve against fresh TMDB data
           }
         });
+
+        // One-time migration: if this session never customized beyond the
+        // original 10-service default set (no sync, no manual additions/
+        // removals), upgrade to the new curated 12-service default so
+        // existing sessions get the cleaner, evenly-divisible grid too.
+        // Preserve on/off state for anything carrying over by name.
+        const OLD_DEFAULTS_NORM = ['netflix','hbomax','hulu','amazonprimevideo','disneyplus',
+          'appletvplus','paramountplus','peacock','criterionchannel','shudder'];
+        const looksUnmodified = parsed.length <= 10 &&
+          parsed.every(s => OLD_DEFAULTS_NORM.includes(normalizeServiceName(s.name)));
+        if (looksUnmodified){
+          const onMap = {};
+          parsed.forEach(s => { onMap[normalizeServiceName(s.name)] = s.on; });
+          parsed = DEFAULT_SERVICES.map(name => ({ name, on: !!onMap[normalizeServiceName(name)] }));
+        }
+
         return parsed;
       }
     } catch(e){}
@@ -664,22 +723,58 @@
     el.innerHTML = '';
     el.className = 't-result';
 
-    const row = document.createElement('span');
-    row.style.display = 'flex';
-    row.style.flexWrap = 'wrap';
-    row.style.justifyContent = 'flex-end';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
+    // Always a column, never a row — sharing a line only when text happens
+    // to be short (previous approach) made the pill's right edge land in a
+    // different place row to row, which read as misaligned. Consistent
+    // stacking keeps every pill flush to the same right edge.
+    const col = document.createElement('span');
+    col.style.display = 'flex';
+    col.style.flexDirection = 'column';
+    col.style.alignItems = 'flex-end';
+    col.style.gap = '4px';
 
     if (res.stream){
-      const names = (res.streamServices && res.streamServices.length) ? res.streamServices.join(', ') : 'a service you have';
+      const allNames = (res.streamServices && res.streamServices.length) ? res.streamServices : [];
+      let names;
+      if (allNames.length > 2){
+        names = allNames.slice(0, 2).join(', ') + ' +' + (allNames.length - 2) + ' more';
+      } else {
+        names = allNames.length ? allNames.join(', ') : 'a service you have';
+      }
       const pill = document.createElement('a');
       pill.href = res.link || '#';
       pill.target = '_blank';
       pill.rel = 'noopener';
       pill.className = 'stream-pill';
       pill.textContent = '🏆 Streaming on ' + names;
-      row.appendChild(pill);
+      if (allNames.length > 2) pill.title = 'All: ' + allNames.join(', ');
+      col.appendChild(pill);
+    } else if (res.otherStreamServices && res.otherStreamServices.length){
+      // Not on anything you've checked, but it IS streaming somewhere —
+      // worth a quiet mention rather than making people toggle a service
+      // first just to see general availability. Deliberately understated
+      // so it never competes with the gold "yours" pill above.
+      const allOther = res.otherStreamServices;
+      const otherNames = allOther.length > 2
+        ? allOther.slice(0, 2).join(', ') + ' +' + (allOther.length - 2) + ' more'
+        : allOther.join(', ');
+      const other = document.createElement('span');
+      other.className = 'inline-elsewhere';
+      if (res.link){
+        const a = document.createElement('a');
+        a.href = res.link;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'streaming on ' + otherNames;
+        a.style.color = 'inherit';
+        a.style.textDecoration = 'underline';
+        a.style.textUnderlineOffset = '2px';
+        other.appendChild(a);
+      } else {
+        other.textContent = 'streaming on ' + otherNames;
+      }
+      if (allOther.length > 2) other.title = 'All: ' + allOther.join(', ');
+      col.appendChild(other);
     }
 
     // Rent/buy shows alongside streaming too, not just as a fallback —
@@ -714,17 +809,17 @@
       } else {
         t.textContent = transactText;
       }
-      row.appendChild(t);
+      col.appendChild(t);
     }
 
-    if (!res.stream && !hasTransact && !rentPriceKnown && !buyPriceKnown){
+    if (!res.stream && !res.otherStreamServices?.length && !hasTransact && !rentPriceKnown && !buyPriceKnown){
       const none = document.createElement('span');
       none.className = 'inline-none';
       none.textContent = 'not available';
-      row.appendChild(none);
+      col.appendChild(none);
     }
 
-    el.appendChild(row);
+    el.appendChild(col);
 
     if (res.debugTitle){
       const dbg = document.createElement('span');
@@ -954,11 +1049,13 @@
         onServices.some(s => servicesMatch(s.name, p.provider_name))
       );
       const stream = matchedStream.length > 0;
+      const otherStream = flatrate.filter(p => !matchedStream.includes(p));
 
       const res = {
         status: 'ok',
         stream,
         streamServices: matchedStream.map(p => p.provider_name),
+        otherStreamServices: otherStream.map(p => p.provider_name),
         link: tmdbLink,
         rentServices: rent.map(p => p.provider_name),
         buyServices: buy.map(p => p.provider_name),
@@ -1030,6 +1127,7 @@
     saveFilms(films);
     renderFilms();
     setImportStatus('Loaded ' + films.length + ' films from ' + sourceLabel + '.', true);
+    refreshAll(true);
   }
 
   function setImportStatus(msg, ok){
@@ -1084,6 +1182,7 @@
       setQuickAddStatus('Already on your list.', false);
     } else {
       setQuickAddStatus('Added ' + added + (added === 1 ? ' film.' : ' films.'), true);
+      refreshAll(true);
     }
   });
 
@@ -1302,7 +1401,30 @@
     $('syncProvidersBtn').textContent = 'Sync real service names from TMDB';
   });
 
+  // ---------- theme ----------
+  function loadTheme(){
+    return localStorage.getItem(LS_THEME) === 'light' ? 'light' : 'dark';
+  }
+  function applyTheme(theme){
+    if (theme === 'light'){
+      document.documentElement.setAttribute('data-theme', 'light');
+      $('themeToggle').textContent = '☀️';
+      $('themeToggle').title = 'Switch to dark theme';
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      $('themeToggle').textContent = '🌙';
+      $('themeToggle').title = 'Switch to light theme';
+    }
+  }
+  let currentTheme = loadTheme();
+  $('themeToggle').addEventListener('click', () => {
+    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+    localStorage.setItem(LS_THEME, currentTheme);
+    applyTheme(currentTheme);
+  });
+
   // ---------- init ----------
+  applyTheme(currentTheme);
   renderFilms();
   renderServices();
   updateServiceStatus();
