@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <title>Where to Watch — Watchlist</title>
 <script>
   try {
@@ -255,7 +256,7 @@
   ul.tickets{ list-style: none; margin: 14px 0 0; padding: 0; max-height: 360px; overflow-y: auto; }
   ul.tickets li{
     display: flex; justify-content: space-between; gap: 10px;
-    padding: 10px 4px;
+    padding: 8px 4px;
     border-bottom: 1px dashed var(--line);
     font-size: 0.9rem;
   }
@@ -271,14 +272,23 @@
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.72rem;
     color: var(--ink-faint);
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) 130px;
+    column-gap: 12px;
+    align-items: start;
+    max-width: 420px;
+    margin-left: auto;
+    line-height: 1.35;
+  }
+  .t-result-stream-col{ text-align: left; }
+  .t-result-transact-col{ text-align: right; }
+  .t-result-meta{
+    grid-column: 1 / -1;
     text-align: right;
-    max-width: 260px;
-    flex-shrink: 0;
-    line-height: 1.4;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 2px;
   }
   .stream-pill{
     display: inline-flex;
@@ -326,6 +336,13 @@
   @media (max-width: 480px){
     .panel{ padding: 16px; }
     .marquee{ padding: 22px 12px 18px; }
+    ul.tickets .t-result{
+      grid-template-columns: 1fr;
+      max-width: 160px;
+      row-gap: 4px;
+    }
+    .t-result-stream-col{ text-align: right; }
+    .t-result-meta{ grid-column: 1; }
   }
 </style>
 </head>
@@ -386,11 +403,27 @@
         <p class="status" id="quickAddStatus"></p>
       </div>
     </div>
+    <p class="hint" style="margin-top:14px; margin-bottom:0;">First time here? <a href="#apiKeysPanel" style="text-decoration:underline;">Set up your TMDB key ↓</a> — it's a one-time thing, tucked at the bottom so it's out of the way once it's done.</p>
   </div>
 
   <div class="panel">
+    <h2>Streaming Services</h2>
+    <p class="hint">Tap to light up what you've got. Saved automatically.</p>
+    <div class="import-row" style="margin-bottom:14px;">
+      <button class="ghost" id="syncProvidersBtn" type="button" disabled title="Add a TMDB key first">Sync real service names from TMDB</button>
+      <button class="ghost" id="selectAllServices" type="button">Select all</button>
+      <button class="ghost" id="clearAllServices" type="button">Clear all</button>
+    </div>
+    <div class="bulb-grid" id="bulbGrid"></div>
+    <div class="custom-service-row">
+      <input type="text" id="customServiceInput" placeholder="Add a service (e.g. MUBI, Kanopy)">
+      <button id="addCustomService" type="button">Add</button>
+    </div>
+  </div>
+
+  <div class="panel" id="apiKeysPanel">
     <h2>API Keys</h2>
-    <p class="hint">TMDB is required — it does the title matching and tells you stream vs. rent vs. buy. Watchmode is optional and only adds real prices; if it doesn't cooperate from a browser, everything else still works. Keys stay in your browser only.</p>
+    <p class="hint">TMDB access is required — it does the title matching and tells you stream vs. rent vs. buy. Use your own free key, or skip that entirely with a hosted proxy (below). Watchmode is optional and only adds real prices; if it doesn't cooperate from a browser, everything else still works. Keys stay in your browser only.</p>
 
     <div style="margin-bottom:16px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg-inset);">
       <p class="hint" style="margin:0 0 8px; color:var(--ink-muted); font-weight:600;">Have a hosted proxy? Skip personal keys entirely.</p>
@@ -428,19 +461,6 @@
     <p class="status" id="keyStatus"></p>
   </div>
 
-  <div class="panel">
-    <h2>Streaming Services</h2>
-    <p class="hint">Tap to light up what you've got. Saved automatically.</p>
-    <div class="import-row" style="margin-bottom:14px;">
-      <button class="ghost" id="syncProvidersBtn" type="button" disabled title="Add a TMDB key first">Sync real service names from TMDB</button>
-    </div>
-    <div class="bulb-grid" id="bulbGrid"></div>
-    <div class="custom-service-row">
-      <input type="text" id="customServiceInput" placeholder="Add a service (e.g. MUBI, Kanopy)">
-      <button id="addCustomService" type="button">Add</button>
-    </div>
-  </div>
-
 </div>
 
 <script>
@@ -454,11 +474,26 @@
   const LS_RESULTS_VERSION = 'watchlist:resultsVersion';
   const RESULTS_SCHEMA_VERSION = 5; // bump whenever the shape OR matching logic of a cached result changes
   const LS_THEME = 'watchlist:theme';
+  const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — catches new releases/removals without re-checking constantly
+
+  function isResultFresh(res){
+    return !!(res && res.status === 'ok' && res.checkedAt && (Date.now() - res.checkedAt) < CACHE_TTL_MS);
+  }
+  function timeAgo(ts){
+    if (!ts) return 'unknown';
+    const mins = Math.round((Date.now() - ts) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + ' hr ago';
+    const days = Math.round(hours / 24);
+    return days + ' day' + (days === 1 ? '' : 's') + ' ago';
+  }
 
   const DEFAULT_SERVICES = [
     'Netflix', 'HBO Max', 'Hulu', 'Amazon Prime Video',
-    'Disney Plus', 'Apple TV Plus', 'Paramount Plus', 'Peacock',
-    'Starz', 'AMC Plus', 'Tubi', 'Pluto TV'
+    'Disney Plus', 'Apple TV', 'Paramount Plus', 'Peacock',
+    'Starz', 'AMC Plus', 'MGM Plus', 'Tubi', 'Pluto TV'
   ];
 
   const $ = (id) => document.getElementById(id);
@@ -480,26 +515,38 @@
     // Explicit aliases only — no loose substring matching. Substring
     // containment looks tempting (handles "Prime Video" <-> "Amazon Prime
     // Video") but it also wrongly matches "Paramount Plus" to the separate
-    // "Paramount Plus Premium" tier, and "Apple TV" to "Apple TV Plus".
-    // Those are genuinely different products, so matching has to be explicit.
+    // "Paramount Plus Premium" tier, and "Apple TV" to the distinct "Apple TV
+    // Amazon Channel"/"Apple TV Store" listings. Those are genuinely
+    // different products, so matching has to stay explicit.
     const ALIASES = { 'primevideo': 'amazonprimevideo' };
     if (ALIASES[na] === nb || ALIASES[nb] === na) return true;
     return false;
   }
 
   // ---------- storage ----------
+  function getStored(key){
+    try { return localStorage.getItem(key); } catch(e){ console.warn('Could not read from localStorage:', key, e); return null; }
+  }
+  function setStored(key, value){
+    try { localStorage.setItem(key, value); return true; }
+    catch(e){ console.warn('Could not save to localStorage:', key, e); return false; }
+  }
+  function removeStored(key){
+    try { localStorage.removeItem(key); } catch(e){ console.warn('Could not remove from localStorage:', key, e); }
+  }
+
   function loadFilms(){
     try {
-      const raw = localStorage.getItem(LS_LIST);
+      const raw = getStored(LS_LIST);
       return raw ? JSON.parse(raw) : [];
     } catch(e){ return []; }
   }
   function saveFilms(films){
-    localStorage.setItem(LS_LIST, JSON.stringify(films));
+    setStored(LS_LIST, JSON.stringify(films));
   }
   function loadServices(){
     try {
-      const raw = localStorage.getItem(LS_SERVICES);
+      const raw = getStored(LS_SERVICES);
       if (raw) {
         let parsed = JSON.parse(raw);
         // One-time migration: WBD reverted the "Max" rebrand back to "HBO Max"
@@ -512,20 +559,32 @@
           }
         });
 
-        // One-time migration: if this session never customized beyond the
-        // original 10-service default set (no sync, no manual additions/
-        // removals), upgrade to the new curated 12-service default so
-        // existing sessions get the cleaner, evenly-divisible grid too.
-        // Preserve on/off state for anything carrying over by name.
-        const OLD_DEFAULTS_NORM = ['netflix','hbomax','hulu','amazonprimevideo','disneyplus',
-          'appletvplus','paramountplus','peacock','criterionchannel','shudder'];
-        const looksUnmodified = parsed.length <= 10 &&
-          parsed.every(s => OLD_DEFAULTS_NORM.includes(normalizeServiceName(s.name)));
-        if (looksUnmodified){
-          const onMap = {};
-          parsed.forEach(s => { onMap[normalizeServiceName(s.name)] = s.on; });
-          parsed = DEFAULT_SERVICES.map(name => ({ name, on: !!onMap[normalizeServiceName(name)] }));
-        }
+        // One-time migration: TMDB/JustWatch's real provider name for the
+        // Apple TV+ subscription is plain "Apple TV" (no "+"), not "Apple TV
+        // Plus" — that's why it wasn't matching. This only catches the bare
+        // "Apple TV Plus"/"Apple TV+" name exactly, so it won't touch the
+        // genuinely distinct "Apple TV Amazon Channel" or "Apple TV Store".
+        parsed.forEach(s => {
+          if (normalizeServiceName(s.name) === 'appletvplus'){
+            s.name = 'Apple TV';
+            s.tmdbId = null;
+          }
+        });
+
+        // Ensure every curated default is at least offered as an option
+        // (off, so it never overrides your actual picks) — runs for every
+        // session, not just fresh/unmodified ones. Without this, adding a
+        // new curated default later (e.g. MGM Plus) would only ever reach
+        // brand-new installs, never existing sessions that had already been
+        // customized past the original set — which is exactly why AMC+ and
+        // Starz weren't showing up for an already-synced session. Purely
+        // additive: never removes, renames, or re-toggles anything already
+        // present, and never creates a duplicate (checked via servicesMatch).
+        DEFAULT_SERVICES.forEach(name => {
+          if (!parsed.some(s => servicesMatch(s.name, name))){
+            parsed.push({ name, on: false });
+          }
+        });
 
         return parsed;
       }
@@ -534,38 +593,38 @@
     return DEFAULT_SERVICES.map(name => ({ name, on: false }));
   }
   function saveServices(services){
-    localStorage.setItem(LS_SERVICES, JSON.stringify(services));
+    setStored(LS_SERVICES, JSON.stringify(services));
   }
   function loadKeys(){
     return {
-      tmdb: localStorage.getItem(LS_TMDB_KEY) || '',
-      watchmode: localStorage.getItem(LS_WM_KEY) || ''
+      tmdb: getStored(LS_TMDB_KEY) || '',
+      watchmode: getStored(LS_WM_KEY) || ''
     };
   }
   function saveKeys(tmdb, watchmode){
-    localStorage.setItem(LS_TMDB_KEY, tmdb);
-    localStorage.setItem(LS_WM_KEY, watchmode);
+    setStored(LS_TMDB_KEY, tmdb);
+    setStored(LS_WM_KEY, watchmode);
   }
   function loadProxyUrl(){
-    return (localStorage.getItem(LS_PROXY_URL) || '').replace(/\/$/, '');
+    return (getStored(LS_PROXY_URL) || '').replace(/\/$/, '');
   }
   function saveProxyUrl(url){
-    localStorage.setItem(LS_PROXY_URL, url.replace(/\/$/, ''));
+    setStored(LS_PROXY_URL, url.replace(/\/$/, ''));
   }
   function loadResultsCache(){
     try {
-      const storedVersion = parseInt(localStorage.getItem(LS_RESULTS_VERSION) || '0', 10);
+      const storedVersion = parseInt(getStored(LS_RESULTS_VERSION) || '0', 10);
       if (storedVersion !== RESULTS_SCHEMA_VERSION){
-        localStorage.setItem(LS_RESULTS_VERSION, String(RESULTS_SCHEMA_VERSION));
-        localStorage.removeItem(LS_RESULTS);
+        setStored(LS_RESULTS_VERSION, String(RESULTS_SCHEMA_VERSION));
+        removeStored(LS_RESULTS);
         return {};
       }
-      const raw = localStorage.getItem(LS_RESULTS);
+      const raw = getStored(LS_RESULTS);
       return raw ? JSON.parse(raw) : {};
     } catch(e){ return {}; }
   }
   function saveResultsCache(cache){
-    localStorage.setItem(LS_RESULTS, JSON.stringify(cache));
+    setStored(LS_RESULTS, JSON.stringify(cache));
   }
 
   let films = loadFilms();
@@ -704,8 +763,13 @@
       return;
     }
     if (res.status === 'error'){
-      el.textContent = 'lookup failed';
+      let text = 'lookup failed';
+      if (res.errorStatus === 429) text = 'rate limited — try again later';
+      else if (res.errorStatus === 401) text = 'API key rejected';
+      else if (res.errorStatus === 403) text = 'access denied';
+      el.textContent = text;
       el.className = 't-result err';
+      if (res.errorMessage) el.title = res.errorMessage;
       return;
     }
     if (res.status === 'notfound'){
@@ -727,15 +791,8 @@
     el.innerHTML = '';
     el.className = 't-result';
 
-    // Always a column, never a row — sharing a line only when text happens
-    // to be short (previous approach) made the pill's right edge land in a
-    // different place row to row, which read as misaligned. Consistent
-    // stacking keeps every pill flush to the same right edge.
-    const col = document.createElement('span');
-    col.style.display = 'flex';
-    col.style.flexDirection = 'column';
-    col.style.alignItems = 'flex-end';
-    col.style.gap = '4px';
+    const streamCol = document.createElement('span');
+    streamCol.className = 't-result-stream-col';
 
     if (res.stream){
       const allNames = (res.streamServices && res.streamServices.length) ? res.streamServices : [];
@@ -752,7 +809,7 @@
       pill.className = 'stream-pill';
       pill.textContent = '🏆 Streaming on ' + names;
       if (allNames.length > 2) pill.title = 'All: ' + allNames.join(', ');
-      col.appendChild(pill);
+      streamCol.appendChild(pill);
     } else if (res.otherStreamServices && res.otherStreamServices.length){
       // Not on anything you've checked, but it IS streaming somewhere —
       // worth a quiet mention rather than making people toggle a service
@@ -778,11 +835,16 @@
         other.textContent = 'streaming on ' + otherNames;
       }
       if (allOther.length > 2) other.title = 'All: ' + allOther.join(', ');
-      col.appendChild(other);
+      streamCol.appendChild(other);
     }
 
     // Rent/buy shows alongside streaming too, not just as a fallback —
     // useful if you'd rather buy outright, or your subscription lapses.
+    // Lives in its own fixed-position column so it lines up the same way
+    // regardless of what's (or isn't) in the streaming column.
+    const transactCol = document.createElement('span');
+    transactCol.className = 't-result-transact-col';
+
     const rentPriceKnown = res.rentPrice != null;
     const buyPriceKnown = res.buyPrice != null;
     const hasTransact = (res.rentServices && res.rentServices.length) || (res.buyServices && res.buyServices.length);
@@ -798,48 +860,54 @@
         transactText = 'rent or buy →';
       }
       const transactHref = res.rentLink || res.buyLink || res.link || null;
-      const t = document.createElement('span');
-      t.className = 'inline-transact';
       if (transactHref){
         const a = document.createElement('a');
         a.href = transactHref;
         a.target = '_blank';
         a.rel = 'noopener';
         a.textContent = transactText;
+        a.className = 'inline-transact';
         a.style.color = 'inherit';
         a.style.textDecoration = 'underline';
         a.style.textUnderlineOffset = '2px';
-        t.appendChild(a);
+        transactCol.appendChild(a);
       } else {
-        t.textContent = transactText;
+        transactCol.className += ' inline-transact';
+        transactCol.textContent = transactText;
       }
-      col.appendChild(t);
+    } else if (!res.stream && !res.otherStreamServices?.length){
+      transactCol.className += ' inline-none';
+      transactCol.textContent = 'not available';
     }
 
-    if (!res.stream && !res.otherStreamServices?.length && !hasTransact && !rentPriceKnown && !buyPriceKnown){
-      const none = document.createElement('span');
-      none.className = 'inline-none';
-      none.textContent = 'not available';
-      col.appendChild(none);
-    }
+    el.appendChild(streamCol);
+    el.appendChild(transactCol);
 
-    el.appendChild(col);
+    if (res.debugTitle || res.ambiguous){
+      const meta = document.createElement('span');
+      meta.className = 't-result-meta';
 
-    if (res.debugTitle){
-      const dbg = document.createElement('span');
-      dbg.className = 't-ambiguous';
-      dbg.style.color = 'var(--ink-faint)';
-      dbg.style.cursor = 'help';
-      const allSvc = (res.debugAllFlatrate && res.debugAllFlatrate.length) ? res.debugAllFlatrate.join(', ') : 'none listed';
-      dbg.title = 'TMDB matched: ' + res.debugTitle + ' (' + (res.debugYear || '?') + ', id ' + res.debugId + ')\nAll subscription services TMDB lists (not just yours): ' + allSvc;
-      dbg.textContent = 'ⓘ match info';
-      el.appendChild(dbg);
-    }
-    if (res.ambiguous){
-      const flag = document.createElement('span');
-      flag.className = 't-ambiguous';
-      flag.textContent = '⚠ multiple matches';
-      el.appendChild(flag);
+      if (res.debugTitle){
+        const dbg = document.createElement('span');
+        dbg.className = 't-ambiguous';
+        dbg.style.color = 'var(--ink-faint)';
+        dbg.style.cursor = 'help';
+        const allSvc = (res.debugAllFlatrate && res.debugAllFlatrate.length) ? res.debugAllFlatrate.join(', ') : 'none listed';
+        const reasonLabel = MATCH_REASON_LABELS[res.matchReason] || res.matchReason || 'unknown';
+        dbg.title = 'TMDB matched: ' + res.debugTitle + ' (' + (res.debugYear || '?') + ', id ' + res.debugId + ')' +
+          '\nMatch confidence: ' + reasonLabel +
+          '\nChecked: ' + timeAgo(res.checkedAt) +
+          '\nAll subscription services TMDB lists (not just yours): ' + allSvc;
+        dbg.textContent = 'ⓘ match info';
+        meta.appendChild(dbg);
+      }
+      if (res.ambiguous){
+        const flag = document.createElement('span');
+        flag.className = 't-ambiguous';
+        flag.textContent = '⚠ multiple matches';
+        meta.appendChild(flag);
+      }
+      el.appendChild(meta);
     }
   }
 
@@ -884,7 +952,11 @@
         '&query=' + encodeURIComponent(title) + (year ? '&year=' + encodeURIComponent(year) : '');
     }
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error('TMDB search failed: ' + resp.status);
+    if (!resp.ok){
+      const err = new Error('TMDB search failed: ' + resp.status);
+      err.status = resp.status;
+      throw err;
+    }
     const data = await resp.json();
     return data.results || [];
   }
@@ -934,14 +1006,21 @@
       url = 'https://api.themoviedb.org/3/movie/' + movieId + '/watch/providers?api_key=' + encodeURIComponent(keys.tmdb);
     }
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error('TMDB providers failed: ' + resp.status);
+    if (!resp.ok){
+      const err = new Error('TMDB providers failed: ' + resp.status);
+      err.status = resp.status;
+      throw err;
+    }
     const data = await resp.json();
     if (viaProxy) return (data.results && data.results.US) || {}; // proxy passes through raw TMDB shape
     return (data.results && data.results.US) || {};
   }
 
+  // Returns { candidates, reason } rather than just candidates — reason is
+  // a lightweight confidence signal (not a scoring system) surfaced in the
+  // "ⓘ match info" tooltip so a shaky match is visible rather than silent.
   function pickCandidates(results, year, typedTitle){
-    if (!results.length) return [];
+    if (!results.length) return { candidates: [], reason: 'none' };
     // results are already popularity-sorted by tmdbSearchMovieRobust
     if (!year){
       // An exact title match should always win over a more popular film
@@ -952,20 +1031,28 @@
       if (typedTitle){
         const norm = typedTitle.trim().toLowerCase();
         const exact = results.filter(r => (r.title || '').trim().toLowerCase() === norm);
-        if (exact.length) return exact.slice(0, 3);
+        if (exact.length) return { candidates: exact.slice(0, 3), reason: 'exact-title' };
       }
-      return results.slice(0, 1);
+      return { candidates: results.slice(0, 1), reason: 'popularity-fallback' };
     }
     const exact = results.filter(r => (r.release_date || '').slice(0, 4) === String(year));
-    if (exact.length) return exact.slice(0, 3);
+    if (exact.length) return { candidates: exact.slice(0, 3), reason: 'exact-year' };
     // fall back to closest year within 1
     const near = results.filter(r => {
       const ry = parseInt((r.release_date || '').slice(0, 4), 10);
       return ry && Math.abs(ry - parseInt(year, 10)) <= 1;
     });
-    if (near.length) return near.slice(0, 3);
-    return results.slice(0, 1);
+    if (near.length) return { candidates: near.slice(0, 3), reason: 'near-year' };
+    return { candidates: results.slice(0, 1), reason: 'popularity-fallback' };
   }
+
+  const MATCH_REASON_LABELS = {
+    'exact-year': 'exact title + year',
+    'near-year': 'title match, year off by ≤1 (lower confidence)',
+    'exact-title': 'exact title match',
+    'popularity-fallback': 'no exact match — picked most popular result (lower confidence)',
+    'none': 'no results'
+  };
 
   // ---------- Watchmode (optional, pricing only) ----------
 
@@ -1018,7 +1105,7 @@
     setFilmResult(f, { status: 'pending' });
     try {
       const results = await tmdbSearchMovieRobust(f.name, f.year);
-      const candidates = pickCandidates(results, f.year, f.name);
+      const { candidates, reason: matchReason } = pickCandidates(results, f.year, f.name);
       if (!candidates.length){
         const meta = results._searchMeta || {};
         setFilmResult(f, {
@@ -1055,7 +1142,7 @@
 
       // Self-heal: if a flatrate provider matches one of your services by
       // normalized name but that service's stored name is a variant
-      // (e.g. "Apple TV+" vs TMDB's "Apple TV Plus"), adopt TMDB's exact
+      // (e.g. "Disney+" vs TMDB's "Disney Plus"), adopt TMDB's exact
       // name/id going forward so future exact-match lookups stay reliable.
       let servicesChanged = false;
       flatrate.forEach(p => {
@@ -1094,7 +1181,9 @@
         debugTitle: primary.title,
         debugYear: (primary.release_date || '').slice(0, 4),
         debugId: primary.id,
-        debugAllFlatrate: flatrate.map(p => p.provider_name)
+        debugAllFlatrate: flatrate.map(p => p.provider_name),
+        matchReason: matchReason,
+        checkedAt: Date.now()
       };
 
       if ((proxyUrl || keys.watchmode) && (rent.length || buy.length)){
@@ -1109,7 +1198,11 @@
 
       setFilmResult(f, res);
     } catch(e){
-      setFilmResult(f, { status: 'error' });
+      setFilmResult(f, {
+        status: 'error',
+        errorStatus: (e && e.status) || null,
+        errorMessage: (e && e.message) || 'Unknown error'
+      });
     }
   }
 
@@ -1120,7 +1213,7 @@
       $('serviceStatus').textContent = 'Add a TMDB API key or a proxy URL above first.';
       return;
     }
-    const targets = films.filter(f => !onlyMissing || !resultsCache[filmKey(f)] || resultsCache[filmKey(f)].status !== 'ok');
+    const targets = films.filter(f => !onlyMissing || !isResultFresh(resultsCache[filmKey(f)]));
     if (!targets.length){
       $('serviceStatus').textContent = 'Everything is already looked up.';
       return;
@@ -1248,6 +1341,24 @@
     if (e.key === 'Enter'){ e.preventDefault(); $('addCustomService').click(); }
   });
 
+  $('selectAllServices').addEventListener('click', () => {
+    services.forEach(s => { s.on = true; });
+    saveServices(services);
+    renderServices();
+    updateServiceStatus();
+    recomputeCachedMatches();
+    renderFilms();
+  });
+
+  $('clearAllServices').addEventListener('click', () => {
+    services.forEach(s => { s.on = false; });
+    saveServices(services);
+    renderServices();
+    updateServiceStatus();
+    recomputeCachedMatches();
+    renderFilms();
+  });
+
   $('streamOnlyFilter').addEventListener('change', renderFilms);
 
   function csvEscape(val){
@@ -1300,11 +1411,35 @@
 
   $('refreshBtn').addEventListener('click', () => refreshAll(true));
 
+  // Basic sanity check before we persist or fetch a proxy URL — catches
+  // typos and discourages plain-http proxies (which would send requests,
+  // and any future API key, unencrypted).
+  function validateProxyUrl(value){
+    const trimmed = (value || '').trim().replace(/\/$/, '');
+    if (!trimmed) return { ok: true, url: '' }; // clearing the field is always fine
+    let parsed;
+    try {
+      parsed = new URL(trimmed);
+    } catch(e){
+      return { ok: false, error: 'That doesn\'t look like a valid URL — include https:// at the start.' };
+    }
+    const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    if (parsed.protocol !== 'https:' && !isLocal){
+      return { ok: false, error: 'Proxy URL should use https:// (plain http sends requests unencrypted).' };
+    }
+    return { ok: true, url: trimmed };
+  }
+
   $('saveProxyBtn').addEventListener('click', async () => {
-    const url = $('proxyUrlInput').value.trim();
-    proxyUrl = url.replace(/\/$/, '');
-    saveProxyUrl(proxyUrl);
+    const check = validateProxyUrl($('proxyUrlInput').value);
     const el = $('proxyStatus');
+    if (!check.ok){
+      el.textContent = check.error;
+      el.className = 'status err';
+      return;
+    }
+    proxyUrl = check.url;
+    saveProxyUrl(proxyUrl);
     $('syncProvidersBtn').disabled = !proxyUrl && !keys.tmdb;
 
     if (!proxyUrl){
@@ -1348,8 +1483,14 @@
     const el = $('keyStatus');
 
     if (!tmdb){
-      el.textContent = 'A TMDB key is required for lookups to work.';
-      el.className = 'status';
+      if (proxyUrl){
+        el.textContent = 'Proxy configured — a personal TMDB key isn\'t required. (Watchmode key ' +
+          (watchmode ? 'saved.' : 'not set — the proxy handles pricing if it has its own key.') + ')';
+        el.className = 'status ok';
+      } else {
+        el.textContent = 'A TMDB key is required for lookups to work — or add a proxy URL above instead.';
+        el.className = 'status';
+      }
       return;
     }
 
@@ -1396,8 +1537,12 @@
       const data = await resp.json();
 
       // Filter out obviously transactional-only stores and low-signal niche
-      // platforms — this list only exists to reduce clutter, it's not exhaustive.
-      const NOISE = /\b(store|movies|kids)\b|^(apple tv|google play|microsoft|redbox|plex|vix|aha|sun nxt|docsville|dekkoo|filmzie|magellan tv|broadwayhd|guidedoc|jolt film|found tv|public domain movies|justwatch tv|curiosity stream)$/i;
+      // platforms — this list only exists to reduce clutter, it's not
+      // exhaustive. Note: plain "Apple TV" (no "+") is TMDB's real provider
+      // name for the Apple TV+ subscription itself, not just a storefront —
+      // it's deliberately NOT filtered here, even though that looks odd
+      // next to "Apple TV Store" being excluded.
+      const NOISE = /\b(store|movies|kids)\b|^(google play|microsoft|redbox|plex|vix|aha|sun nxt|docsville|dekkoo|filmzie|magellan tv|broadwayhd|guidedoc|jolt film|found tv|public domain movies|justwatch tv|curiosity stream)$/i;
 
       const real = (data.results || [])
         .sort((a, b) => (a.display_priority || 0) - (b.display_priority || 0))
@@ -1436,7 +1581,7 @@
 
   // ---------- theme ----------
   function loadTheme(){
-    return localStorage.getItem(LS_THEME) === 'light' ? 'light' : 'dark';
+    return getStored(LS_THEME) === 'light' ? 'light' : 'dark';
   }
   function applyTheme(theme){
     if (theme === 'light'){
@@ -1452,12 +1597,13 @@
   let currentTheme = loadTheme();
   $('themeToggle').addEventListener('click', () => {
     currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-    localStorage.setItem(LS_THEME, currentTheme);
+    setStored(LS_THEME, currentTheme);
     applyTheme(currentTheme);
   });
 
   // ---------- init ----------
   applyTheme(currentTheme);
+  recomputeCachedMatches(); // catches silent service-name migrations (e.g. Apple TV rename) on load
   renderFilms();
   renderServices();
   updateServiceStatus();
