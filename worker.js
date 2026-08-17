@@ -12,7 +12,7 @@
  *
  * Deploy (takes about 5 minutes):
  *   1. Create a free Cloudflare account: https://dash.cloudflare.com/sign-up
- *   2. Install Wrangler (Cloudflare's CLI):  npm install -g wrangler
+ *   2. Install Wrangler (Cloudflare's CLI):  
  *   3. In a new folder, run:  wrangler init watchlist-proxy
  *      (choose "Hello World" worker, no, don't deploy yet)
  *   4. Replace the generated worker's code with this file's contents.
@@ -30,7 +30,7 @@
  * long time to get near it. If it ever does, that's a good problem to have.
  */
 
-const ALLOWED_ORIGIN = 'https://yourusername.github.io'; // <-- change this to your actual Pages URL
+const ALLOWED_ORIGIN = 'https://farocode.github.io/'; // <-- change this to your actual Pages URL
 
 function corsHeaders(){
   return {

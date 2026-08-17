@@ -358,6 +358,32 @@
     </div>
   </div>
 
+  <div class="panel" style="padding-top:16px; padding-bottom:16px;">
+    <div style="display:flex; gap:20px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:220px;">
+        <h2 style="font-size:0.95rem; margin-bottom:2px;">Import CSV</h2>
+        <p class="hint" style="margin:0 0 8px; font-size:0.78rem;">Your Letterboxd watchlist export.</p>
+        <div class="import-row">
+          <input type="file" id="csvFile" accept=".csv,text/csv">
+        </div>
+        <div class="import-row" style="margin-top:8px;">
+          <button class="ghost" id="clearList" type="button">Clear saved list</button>
+        </div>
+        <p class="status" id="importStatus" style="margin-top:6px;"></p>
+      </div>
+      <div style="flex:1; min-width:220px;">
+        <h2 style="font-size:0.95rem; margin-bottom:2px;">Add a Film</h2>
+        <p class="hint" style="margin:0 0 8px; font-size:0.78rem;">"Dune" or "Dune, 2021" — one per line for a bunch.</p>
+        <textarea id="quickAddArea" placeholder="Dune, 2021&#10;The Brutalist" style="min-height:44px;"></textarea>
+        <div class="import-row" style="margin-top:8px;">
+          <button class="primary" id="quickAddBtn" type="button">Add to list</button>
+        </div>
+        <p class="status" id="quickAddStatus" style="margin-top:6px;"></p>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:10px; margin-bottom:0; font-size:0.78rem;">First time here? <a href="#apiKeysPanel" style="text-decoration:underline;">Set up your TMDB key ↓</a> — one-time, tucked at the bottom.</p>
+  </div>
+
   <div class="panel">
     <div class="list-head">
       <h2 style="margin-bottom:0;">The List</h2>
@@ -368,7 +394,7 @@
       Only show what's streaming on my services (hide rent/buy/unavailable)
     </label>
     <ul class="tickets" id="ticketList"></ul>
-    <div class="empty-state" id="emptyState">Nothing loaded yet — add films below to get started.</div>
+    <div class="empty-state" id="emptyState">Nothing loaded yet — add films above to get started.</div>
     <div class="empty-state" id="filteredEmptyState" style="display:none;">Nothing streaming on your selected services yet — try Refresh Showtimes, or turn the filter off to see rent/buy options too.</div>
 
     <div class="footer-row">
@@ -378,32 +404,6 @@
         <button class="primary" id="refreshBtn" type="button" disabled title="Load a watchlist first">Refresh Showtimes</button>
       </div>
     </div>
-  </div>
-
-  <div class="panel">
-    <div style="display:flex; gap:20px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:240px;">
-        <h2 style="font-size:1.1rem;">Import CSV</h2>
-        <p class="hint" style="margin-bottom:10px;">Your Letterboxd watchlist export.</p>
-        <div class="import-row">
-          <input type="file" id="csvFile" accept=".csv,text/csv">
-        </div>
-        <div class="import-row" style="margin-top:10px;">
-          <button class="ghost" id="clearList" type="button">Clear saved list</button>
-        </div>
-        <p class="status" id="importStatus"></p>
-      </div>
-      <div style="flex:1; min-width:240px;">
-        <h2 style="font-size:1.1rem;">Add a Film</h2>
-        <p class="hint" style="margin-bottom:10px;">One title, or a bunch — one per line. "Dune" or "Dune, 2021" both work.</p>
-        <textarea id="quickAddArea" placeholder="Dune, 2021&#10;The Brutalist&#10;Nosferatu (2024)" style="min-height:70px;"></textarea>
-        <div class="import-row" style="margin-top:10px;">
-          <button class="primary" id="quickAddBtn" type="button">Add to list</button>
-        </div>
-        <p class="status" id="quickAddStatus"></p>
-      </div>
-    </div>
-    <p class="hint" style="margin-top:14px; margin-bottom:0;">First time here? <a href="#apiKeysPanel" style="text-decoration:underline;">Set up your TMDB key ↓</a> — it's a one-time thing, tucked at the bottom so it's out of the way once it's done.</p>
   </div>
 
   <div class="panel">
@@ -1210,7 +1210,7 @@
     recomputeCachedMatches();
     renderFilms();
     if (!keys.tmdb && !proxyUrl){
-      $('serviceStatus').textContent = 'Add a TMDB API key or a proxy URL above first.';
+      $('serviceStatus').textContent = 'Add a TMDB API key or a proxy URL at the bottom of the page first.';
       return;
     }
     const targets = films.filter(f => !onlyMissing || !isResultFresh(resultsCache[filmKey(f)]));
