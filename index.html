@@ -423,16 +423,7 @@
 
   <div class="panel" id="apiKeysPanel">
     <h2>API Keys</h2>
-    <p class="hint">TMDB access is required — it does the title matching and tells you stream vs. rent vs. buy. Use your own free key, or skip that entirely with a hosted proxy (below). Watchmode is optional and only adds real prices; if it doesn't cooperate from a browser, everything else still works. Keys stay in your browser only.</p>
-
-    <div style="margin-bottom:16px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg-inset);">
-      <p class="hint" style="margin:0 0 8px; color:var(--ink-muted); font-weight:600;">Have a hosted proxy? Skip personal keys entirely.</p>
-      <div class="import-row">
-        <input type="text" id="proxyUrlInput" placeholder="https://your-worker.yourname.workers.dev" style="flex:1; min-width:200px; background:var(--bg-inset); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 12px; font-size:0.83rem;">
-        <button class="primary" id="saveProxyBtn" type="button">Save proxy</button>
-      </div>
-      <p class="status" id="proxyStatus" style="margin-top:8px;"></p>
-    </div>
+    <p class="hint">TMDB access is required — it does the title matching and tells you stream vs. rent vs. buy. A personal key is the easiest path (free, no card, a couple minutes). Watchmode is optional and only adds real prices; if it doesn't cooperate from a browser, everything else still works. Keys stay in your browser only.</p>
 
     <div class="import-row">
       <input type="text" id="tmdbKeyInput" placeholder="TMDB API key (required)" style="flex:1; min-width:200px; background:var(--bg-inset); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 12px; font-size:0.83rem;">
@@ -449,16 +440,24 @@
       <summary style="padding:10px 14px; cursor:pointer; font-size:0.83rem; color:var(--ink-muted); font-weight:600; list-style:revert;">New to TMDB? Click for a 1-minute walkthrough</summary>
       <div style="padding:0 14px 12px;">
         <ol style="margin:0; padding-left:18px; font-size:0.8rem; color:var(--ink-muted); line-height:1.7;">
-          <li>Create a free account at themoviedb.org, then verify your email.</li>
-          <li>Go to your account <strong>Settings → API</strong> (or use the link above).</li>
-          <li>Click <strong>Create</strong> / <strong>Request an API Key</strong> and choose <strong>Developer</strong> — describe it as personal/non-commercial use.</li>
-          <li>On the API settings page you'll see two values. Copy the one labeled <strong>"API Key (v3 auth)"</strong> — a short string of letters and numbers.</li>
-          <li>Don't copy the <strong>"API Read Access Token"</strong> — that's the long one starting with <code>eyJ</code>, and it won't work here.</li>
-          <li>Paste the short key into the TMDB field above and hit Save — it'll confirm it's working.</li>
+          <li>Create a free account at themoviedb.org (no credit card needed), then verify your email.</li>
+          <li>Go to <strong>Settings → API</strong> (or use the link above) and request a <strong>Developer</strong> key — describe it as personal/non-commercial use.</li>
+          <li>You'll see two values on the API settings page. Copy the one labeled <strong>"API Key (v3 auth)"</strong> — a short string of letters and numbers. Skip the "API Read Access Token" (the long one starting with <code>eyJ</code>), that one won't work here.</li>
+          <li>Paste it into the TMDB field above and hit Save — it'll confirm right away if it worked.</li>
         </ol>
       </div>
     </details>
     <p class="status" id="keyStatus"></p>
+
+    <div style="margin-top:20px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg-inset);">
+      <p class="hint" style="margin:0 0 8px; color:var(--ink-muted); font-weight:600;">Advanced: running your own hosted proxy?</p>
+      <p class="hint" style="margin:0 0 8px; font-size:0.78rem;">Only relevant if you've deployed the included Cloudflare Worker (see <code>worker.js</code>) — this skips personal keys entirely by routing through your own server-side proxy instead. Most people won't need this; a personal TMDB key above is simpler.</p>
+      <div class="import-row">
+        <input type="text" id="proxyUrlInput" placeholder="https://your-worker.yourname.workers.dev" style="flex:1; min-width:200px; background:var(--bg-inset); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:9px 12px; font-size:0.83rem;">
+        <button class="primary" id="saveProxyBtn" type="button">Save proxy</button>
+      </div>
+      <p class="status" id="proxyStatus" style="margin-top:8px;"></p>
+    </div>
   </div>
 
 </div>
@@ -493,7 +492,7 @@
   const DEFAULT_SERVICES = [
     'Netflix', 'HBO Max', 'Hulu', 'Amazon Prime Video',
     'Disney Plus', 'Apple TV', 'Paramount Plus', 'Peacock',
-    'Starz', 'AMC Plus', 'MGM Plus', 'Tubi', 'Pluto TV'
+    'Starz', 'AMC Plus', 'Tubi', 'Pluto TV'
   ];
 
   const $ = (id) => document.getElementById(id);
@@ -570,6 +569,13 @@
             s.tmdbId = null;
           }
         });
+
+        // One-time cleanup: MGM Plus was briefly a curated default, then
+        // dropped (niche enough that it's not worth a 13th default slot).
+        // Only remove it if it was never actually toggled on — if someone
+        // genuinely has it and turned it on, leave it alone rather than
+        // silently discarding a real choice.
+        parsed = parsed.filter(s => !(normalizeServiceName(s.name) === 'mgmplus' && !s.on));
 
         // Ensure every curated default is at least offered as an option
         // (off, so it never overrides your actual picks) — runs for every
@@ -1488,7 +1494,7 @@
           (watchmode ? 'saved.' : 'not set — the proxy handles pricing if it has its own key.') + ')';
         el.className = 'status ok';
       } else {
-        el.textContent = 'A TMDB key is required for lookups to work — or add a proxy URL above instead.';
+        el.textContent = 'A TMDB key is required for lookups to work — or use the advanced proxy option below instead.';
         el.className = 'status';
       }
       return;
