@@ -30,7 +30,7 @@
  * long time to get near it. If it ever does, that's a good problem to have.
  */
 
-const ALLOWED_ORIGIN = 'https://farocode.github.io/'; // <-- change this to your actual Pages URL
+const ALLOWED_ORIGIN = 'https://farocode.github.io'; // <-- change this to your actual Pages URL
 
 function corsHeaders(){
   return {
