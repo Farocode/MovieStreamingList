@@ -253,15 +253,25 @@
     font-size: 0.75rem;
     color: var(--ink-faint);
   }
-  ul.tickets{ list-style: none; margin: 14px 0 0; padding: 0; max-height: 360px; overflow-y: auto; }
+  ul.tickets{
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    max-height: 360px;
+    overflow-y: auto;
+    overflow-x: hidden; /* overflow-y:auto alone implicitly makes overflow-x "auto" too (CSS spec) —
+      that let an accidental sideways scroll (trackpad swipe, etc.) persist across re-renders since
+      innerHTML resets don't reset scrollLeft, permanently clipping the left edge of every row
+      (first letters "swallowed" by the panel edge). Locking overflow-x closes that off. */
+  }
   ul.tickets li{
     display: flex; justify-content: space-between; gap: 10px;
-    padding: 8px 4px;
+    padding: 8px 6px;
     border-bottom: 1px dashed var(--line);
     font-size: 0.9rem;
   }
   ul.tickets li:last-child{ border-bottom: none; }
-  ul.tickets .t-name{ color: var(--ink); }
+  ul.tickets .t-name{ color: var(--ink); padding-left: 2px; }
   ul.tickets .t-year-inline{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.78rem;
@@ -308,11 +318,17 @@
     text-align: left;
   }
   .stream-pill:hover{ box-shadow: 0 0 14px rgba(var(--gold-glow),0.6); }
-  .inline-transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; white-space: nowrap; }
-  .inline-elsewhere{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.7; font-style: italic; white-space: nowrap; }
-  .inline-none{ color: var(--ink-faint); font-size: 0.72rem; opacity: 0.6; white-space: nowrap; }
-  ul.tickets .t-result.transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; }
-  ul.tickets .t-result.none{ color: var(--ink-faint); opacity: 0.6; }
+  /* Rent/buy links and the quiet "streaming elsewhere" mention need to stay
+     readable against the dark panel — they're links/info, not decoration.
+     Previously these stacked an extra opacity() cut on top of an already-muted
+     ink-faint color, which pushed real contrast too low to read comfortably.
+     ink-muted at full opacity keeps them visually secondary to the gold pill
+     and the film title while staying legible. */
+  .inline-transact{ color: var(--ink-muted); font-size: 0.68rem; white-space: nowrap; }
+  .inline-elsewhere{ color: var(--ink-muted); font-size: 0.68rem; font-style: italic; white-space: nowrap; }
+  .inline-none{ color: var(--ink-faint); font-size: 0.72rem; white-space: nowrap; }
+  ul.tickets .t-result.transact{ color: var(--ink-muted); font-size: 0.68rem; }
+  ul.tickets .t-result.none{ color: var(--ink-faint); }
   ul.tickets .t-result.pending{ color: var(--ink-faint); font-style: italic; }
   ul.tickets .t-result.err{ color: var(--velvet-bright); }
   ul.tickets .t-ambiguous{
@@ -646,6 +662,9 @@
     const filteredEmpty = $('filteredEmptyState');
     const count = $('listCount');
     list.innerHTML = '';
+    list.scrollLeft = 0; // clearing innerHTML doesn't reset scroll position — without this, an
+      // earlier accidental horizontal scroll (trackpad swipe, etc.) would persist across every
+      // re-render and permanently clip the left edge of each row.
     count.textContent = films.length + (films.length === 1 ? ' film' : ' films');
 
     if (!films.length){
@@ -873,7 +892,6 @@
         a.rel = 'noopener';
         a.textContent = transactText;
         a.className = 'inline-transact';
-        a.style.color = 'inherit';
         a.style.textDecoration = 'underline';
         a.style.textUnderlineOffset = '2px';
         transactCol.appendChild(a);
