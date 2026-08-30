@@ -487,7 +487,7 @@
   const LS_PROXY_URL = 'watchlist:proxyUrl';
   const LS_RESULTS = 'watchlist:results';
   const LS_RESULTS_VERSION = 'watchlist:resultsVersion';
-  const RESULTS_SCHEMA_VERSION = 5; // bump whenever the shape OR matching logic of a cached result changes
+  const RESULTS_SCHEMA_VERSION = 6; // bump whenever the shape OR matching logic of a cached result changes
   const LS_THEME = 'watchlist:theme';
   const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — catches new releases/removals without re-checking constantly
 
@@ -916,12 +916,12 @@
         dbg.className = 't-ambiguous';
         dbg.style.color = 'var(--ink-faint)';
         dbg.style.cursor = 'help';
-        const allSvc = (res.debugAllFlatrate && res.debugAllFlatrate.length) ? res.debugAllFlatrate.join(', ') : 'none listed';
+        const allSvc = (res.debugAllIncluded && res.debugAllIncluded.length) ? res.debugAllIncluded.join(', ') : 'none listed';
         const reasonLabel = MATCH_REASON_LABELS[res.matchReason] || res.matchReason || 'unknown';
         dbg.title = 'TMDB matched: ' + res.debugTitle + ' (' + (res.debugYear || '?') + ', id ' + res.debugId + ')' +
           '\nMatch confidence: ' + reasonLabel +
           '\nChecked: ' + timeAgo(res.checkedAt) +
-          '\nAll subscription services TMDB lists (not just yours): ' + allSvc;
+          '\nAll included/free services TMDB lists (not just yours): ' + allSvc;
         dbg.textContent = 'ⓘ match info';
         meta.appendChild(dbg);
       }
@@ -954,11 +954,11 @@
     let touched = false;
     Object.keys(resultsCache).forEach(key => {
       const res = resultsCache[key];
-      if (!res || res.status !== 'ok' || !res.debugAllFlatrate) return;
-      const matched = res.debugAllFlatrate.filter(name =>
+      if (!res || res.status !== 'ok' || !res.debugAllIncluded) return;
+      const matched = res.debugAllIncluded.filter(name =>
         onServices.some(s => servicesMatch(s.name, name))
       );
-      const other = res.debugAllFlatrate.filter(name => !matched.includes(name));
+      const other = res.debugAllIncluded.filter(name => !matched.includes(name));
       res.stream = matched.length > 0;
       res.streamServices = matched;
       res.otherStreamServices = other;
@@ -1145,11 +1145,11 @@
       // first result TMDB returns isn't always the one with data attached.
       let primary = candidates[0];
       let providers = await tmdbWatchProviders(primary.id);
-      let hasData = (providers.flatrate || []).length || (providers.rent || []).length || (providers.buy || []).length;
+      let hasData = (providers.flatrate || []).length || (providers.free || []).length || (providers.ads || []).length || (providers.rent || []).length || (providers.buy || []).length;
       if (!hasData && candidates.length > 1){
         for (let i = 1; i < candidates.length; i++){
           const alt = await tmdbWatchProviders(candidates[i].id);
-          const altHasData = (alt.flatrate || []).length || (alt.rent || []).length || (alt.buy || []).length;
+          const altHasData = (alt.flatrate || []).length || (alt.free || []).length || (alt.ads || []).length || (alt.rent || []).length || (alt.buy || []).length;
           if (altHasData){
             primary = candidates[i];
             providers = alt;
@@ -1159,17 +1159,33 @@
         }
       }
 
+      // TMDB splits "you can just watch this" into three separate buckets:
+      // flatrate (subscription, e.g. Netflix), free (no subscription needed,
+      // e.g. Tubi, Pluto TV), and ads (an ad-supported tier of a service).
+      // Only reading "flatrate" was the bug behind free ad-supported services
+      // like Tubi never registering as a match even when selected as one of
+      // your services — from the user's perspective those are all the same
+      // thing ("included, no separate rent/buy"), so they're combined here.
       const flatrate = providers.flatrate || [];
+      const free = providers.free || [];
+      const ads = providers.ads || [];
       const rent = providers.rent || [];
       const buy = providers.buy || [];
       const tmdbLink = providers.link || null;
 
-      // Self-heal: if a flatrate provider matches one of your services by
+      const seenIncludedIds = new Set();
+      const included = [...flatrate, ...free, ...ads].filter(p => {
+        if (seenIncludedIds.has(p.provider_id)) return false; // a provider could in theory appear in more than one bucket
+        seenIncludedIds.add(p.provider_id);
+        return true;
+      });
+
+      // Self-heal: if an included provider matches one of your services by
       // normalized name but that service's stored name is a variant
       // (e.g. "Disney+" vs TMDB's "Disney Plus"), adopt TMDB's exact
       // name/id going forward so future exact-match lookups stay reliable.
       let servicesChanged = false;
-      flatrate.forEach(p => {
+      included.forEach(p => {
         const svc = services.find(s => !s.tmdbId && servicesMatch(s.name, p.provider_name));
         if (svc){
           svc.name = p.provider_name;
@@ -1183,11 +1199,11 @@
       }
 
       const onServices = services.filter(s => s.on);
-      const matchedStream = flatrate.filter(p =>
+      const matchedStream = included.filter(p =>
         onServices.some(s => servicesMatch(s.name, p.provider_name))
       );
       const stream = matchedStream.length > 0;
-      const otherStream = flatrate.filter(p => !matchedStream.includes(p));
+      const otherStream = included.filter(p => !matchedStream.includes(p));
 
       const res = {
         status: 'ok',
@@ -1205,7 +1221,7 @@
         debugTitle: primary.title,
         debugYear: (primary.release_date || '').slice(0, 4),
         debugId: primary.id,
-        debugAllFlatrate: flatrate.map(p => p.provider_name),
+        debugAllIncluded: included.map(p => p.provider_name),
         matchReason: matchReason,
         checkedAt: Date.now()
       };
