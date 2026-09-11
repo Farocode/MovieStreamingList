@@ -771,6 +771,69 @@
   }
 
   // ---------- result badge rendering ----------
+  // Small "✎ fix typo" link that expands into a title/year editor in place.
+  // Used by both "no match found" and "did you mean" (when none of the
+  // suggestions are actually right) — same behavior either way: correct the
+  // typed title/year, re-search just this one film.
+  function buildFixTypoLink(f){
+    const fixLink = document.createElement('span');
+    fixLink.className = 't-ambiguous';
+    fixLink.style.cursor = 'pointer';
+    fixLink.style.textDecoration = 'underline';
+    fixLink.textContent = '✎ fix typo';
+    fixLink.setAttribute('role', 'button');
+    fixLink.setAttribute('tabindex', '0');
+
+    const openEditor = () => {
+      const row = document.createElement('span');
+      row.style.display = 'flex';
+      row.style.gap = '4px';
+      row.style.marginTop = '4px';
+      row.style.justifyContent = 'flex-end';
+
+      const titleInput = document.createElement('input');
+      titleInput.type = 'text';
+      titleInput.value = f.name;
+      titleInput.style.cssText = 'width:110px; font-size:0.68rem; background:var(--bg-inset); border:1px solid var(--line); border-radius:4px; color:var(--ink); padding:3px 5px;';
+
+      const yearInput = document.createElement('input');
+      yearInput.type = 'text';
+      yearInput.value = f.year || '';
+      yearInput.placeholder = 'yr';
+      yearInput.style.cssText = 'width:44px; font-size:0.68rem; background:var(--bg-inset); border:1px solid var(--line); border-radius:4px; color:var(--ink); padding:3px 5px;';
+
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.textContent = 'Retry';
+      retryBtn.style.cssText = 'font-size:0.68rem; padding:3px 8px; border-radius:4px;';
+
+      const runRetry = () => {
+        const newName = titleInput.value.trim();
+        if (!newName) return;
+        const oldKey = filmKey(f);
+        f.name = newName;
+        f.year = yearInput.value.trim();
+        delete resultsCache[oldKey];
+        saveFilms(films);
+        saveResultsCache(resultsCache);
+        renderFilms();
+        lookupFilm(f).then(() => saveResultsCache(resultsCache));
+      };
+      retryBtn.addEventListener('click', runRetry);
+      titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRetry(); });
+      yearInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRetry(); });
+
+      row.appendChild(titleInput);
+      row.appendChild(yearInput);
+      row.appendChild(retryBtn);
+      fixLink.replaceWith(row);
+      titleInput.focus();
+    };
+    fixLink.addEventListener('click', openEditor);
+    fixLink.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openEditor(); } });
+    return fixLink;
+  }
+
   function applyResultToEl(el, res, f){
     if (!res){
       el.textContent = '—';
@@ -806,65 +869,7 @@
       dbg.title = tip;
       dbg.textContent = 'ⓘ match info';
       el.appendChild(dbg);
-
-      if (f){
-        const fixLink = document.createElement('span');
-        fixLink.className = 't-ambiguous';
-        fixLink.style.cursor = 'pointer';
-        fixLink.style.textDecoration = 'underline';
-        fixLink.textContent = '✎ fix typo';
-        fixLink.setAttribute('role', 'button');
-        fixLink.setAttribute('tabindex', '0');
-
-        const openEditor = () => {
-          const row = document.createElement('span');
-          row.style.display = 'flex';
-          row.style.gap = '4px';
-          row.style.marginTop = '4px';
-          row.style.justifyContent = 'flex-end';
-
-          const titleInput = document.createElement('input');
-          titleInput.type = 'text';
-          titleInput.value = f.name;
-          titleInput.style.cssText = 'width:110px; font-size:0.68rem; background:var(--bg-inset); border:1px solid var(--line); border-radius:4px; color:var(--ink); padding:3px 5px;';
-
-          const yearInput = document.createElement('input');
-          yearInput.type = 'text';
-          yearInput.value = f.year || '';
-          yearInput.placeholder = 'yr';
-          yearInput.style.cssText = 'width:44px; font-size:0.68rem; background:var(--bg-inset); border:1px solid var(--line); border-radius:4px; color:var(--ink); padding:3px 5px;';
-
-          const retryBtn = document.createElement('button');
-          retryBtn.type = 'button';
-          retryBtn.textContent = 'Retry';
-          retryBtn.style.cssText = 'font-size:0.68rem; padding:3px 8px; border-radius:4px;';
-
-          const runRetry = () => {
-            const newName = titleInput.value.trim();
-            if (!newName) return;
-            const oldKey = filmKey(f);
-            f.name = newName;
-            f.year = yearInput.value.trim();
-            delete resultsCache[oldKey];
-            saveFilms(films);
-            saveResultsCache(resultsCache);
-            renderFilms();
-            lookupFilm(f).then(() => saveResultsCache(resultsCache));
-          };
-          retryBtn.addEventListener('click', runRetry);
-          titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRetry(); });
-          yearInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRetry(); });
-
-          row.appendChild(titleInput);
-          row.appendChild(yearInput);
-          row.appendChild(retryBtn);
-          fixLink.replaceWith(row);
-          titleInput.focus();
-        };
-        fixLink.addEventListener('click', openEditor);
-        fixLink.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openEditor(); } });
-        el.appendChild(fixLink);
-      }
+      if (f) el.appendChild(buildFixTypoLink(f));
       return;
     }
     if (res.status === 'needs-confirmation'){
@@ -892,6 +897,7 @@
       dbg.title = 'Searched TMDB for: "' + (res.debugSearchedAs || '?') + '"\nNone matched exactly — these are the closest TMDB results.';
       dbg.textContent = 'ⓘ match info';
       el.appendChild(dbg);
+      if (f) el.appendChild(buildFixTypoLink(f));
       return;
     }
     el.innerHTML = '';
