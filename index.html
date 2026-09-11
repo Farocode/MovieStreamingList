@@ -253,25 +253,15 @@
     font-size: 0.75rem;
     color: var(--ink-faint);
   }
-  ul.tickets{
-    list-style: none;
-    margin: 14px 0 0;
-    padding: 0;
-    max-height: 360px;
-    overflow-y: auto;
-    overflow-x: hidden; /* overflow-y:auto alone implicitly makes overflow-x "auto" too (CSS spec) —
-      that let an accidental sideways scroll (trackpad swipe, etc.) persist across re-renders since
-      innerHTML resets don't reset scrollLeft, permanently clipping the left edge of every row
-      (first letters "swallowed" by the panel edge). Locking overflow-x closes that off. */
-  }
+  ul.tickets{ list-style: none; margin: 14px 0 0; padding: 0; max-height: 360px; overflow-y: auto; }
   ul.tickets li{
     display: flex; justify-content: space-between; gap: 10px;
-    padding: 8px 6px;
+    padding: 8px 4px;
     border-bottom: 1px dashed var(--line);
     font-size: 0.9rem;
   }
   ul.tickets li:last-child{ border-bottom: none; }
-  ul.tickets .t-name{ color: var(--ink); padding-left: 2px; }
+  ul.tickets .t-name{ color: var(--ink); }
   ul.tickets .t-year-inline{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.78rem;
@@ -318,17 +308,25 @@
     text-align: left;
   }
   .stream-pill:hover{ box-shadow: 0 0 14px rgba(var(--gold-glow),0.6); }
-  /* Rent/buy links and the quiet "streaming elsewhere" mention need to stay
-     readable against the dark panel — they're links/info, not decoration.
-     Previously these stacked an extra opacity() cut on top of an already-muted
-     ink-faint color, which pushed real contrast too low to read comfortably.
-     ink-muted at full opacity keeps them visually secondary to the gold pill
-     and the film title while staying legible. */
-  .inline-transact{ color: var(--ink-muted); font-size: 0.68rem; white-space: nowrap; }
-  .inline-elsewhere{ color: var(--ink-muted); font-size: 0.68rem; font-style: italic; white-space: nowrap; }
-  .inline-none{ color: var(--ink-faint); font-size: 0.72rem; white-space: nowrap; }
-  ul.tickets .t-result.transact{ color: var(--ink-muted); font-size: 0.68rem; }
-  ul.tickets .t-result.none{ color: var(--ink-faint); }
+  .inline-transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; white-space: nowrap; }
+  .inline-elsewhere{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.7; font-style: italic; white-space: nowrap; }
+  .inline-none{ color: var(--ink-faint); font-size: 0.72rem; opacity: 0.6; white-space: nowrap; }
+  .suggestion-btn{
+    display: block;
+    font-size: 0.7rem;
+    padding: 4px 9px;
+    margin-top: 3px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg-inset);
+    color: var(--ink);
+    cursor: pointer;
+    text-align: right;
+    margin-left: auto;
+  }
+  .suggestion-btn:hover{ border-color: var(--gold-dim); }
+  ul.tickets .t-result.transact{ color: var(--ink-faint); font-size: 0.68rem; opacity: 0.85; }
+  ul.tickets .t-result.none{ color: var(--ink-faint); opacity: 0.6; }
   ul.tickets .t-result.pending{ color: var(--ink-faint); font-style: italic; }
   ul.tickets .t-result.err{ color: var(--velvet-bright); }
   ul.tickets .t-ambiguous{
@@ -487,7 +485,7 @@
   const LS_PROXY_URL = 'watchlist:proxyUrl';
   const LS_RESULTS = 'watchlist:results';
   const LS_RESULTS_VERSION = 'watchlist:resultsVersion';
-  const RESULTS_SCHEMA_VERSION = 6; // bump whenever the shape OR matching logic of a cached result changes
+  const RESULTS_SCHEMA_VERSION = 5; // bump whenever the shape OR matching logic of a cached result changes
   const LS_THEME = 'watchlist:theme';
   const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — catches new releases/removals without re-checking constantly
 
@@ -662,9 +660,6 @@
     const filteredEmpty = $('filteredEmptyState');
     const count = $('listCount');
     list.innerHTML = '';
-    list.scrollLeft = 0; // clearing innerHTML doesn't reset scroll position — without this, an
-      // earlier accidental horizontal scroll (trackpad swipe, etc.) would persist across every
-      // re-render and permanently clip the left edge of each row.
     count.textContent = films.length + (films.length === 1 ? ' film' : ' films');
 
     if (!films.length){
@@ -703,7 +698,7 @@
 
       const result = document.createElement('span');
       result.className = 't-result';
-      applyResultToEl(result, resultsCache[filmKey(f)]);
+      applyResultToEl(result, resultsCache[filmKey(f)], f);
 
       li.appendChild(name);
       li.appendChild(result);
@@ -776,7 +771,7 @@
   }
 
   // ---------- result badge rendering ----------
-  function applyResultToEl(el, res){
+  function applyResultToEl(el, res, f){
     if (!res){
       el.textContent = '—';
       el.className = 't-result';
@@ -809,6 +804,92 @@
       if (res.debugAltTried) tip += '\nAlso tried: "' + res.debugAltTried + '"';
       tip += '\nRaw results returned: ' + (res.debugRawCount != null ? res.debugRawCount : '0');
       dbg.title = tip;
+      dbg.textContent = 'ⓘ match info';
+      el.appendChild(dbg);
+
+      if (f){
+        const fixLink = document.createElement('span');
+        fixLink.className = 't-ambiguous';
+        fixLink.style.cursor = 'pointer';
+        fixLink.style.textDecoration = 'underline';
+        fixLink.textContent = '✎ fix typo';
+        fixLink.setAttribute('role', 'button');
+        fixLink.setAttribute('tabindex', '0');
+
+        const openEditor = () => {
+          const row = document.createElement('span');
+          row.style.display = 'flex';
+          row.style.gap = '4px';
+          row.style.marginTop = '4px';
+          row.style.justifyContent = 'flex-end';
+
+          const titleInput = document.createElement('input');
+          titleInput.type = 'text';
+          titleInput.value = f.name;
+          titleInput.style.cssText = 'width:110px; font-size:0.68rem; background:var(--bg-inset); border:1px solid var(--line); border-radius:4px; color:var(--ink); padding:3px 5px;';
+
+          const yearInput = document.createElement('input');
+          yearInput.type = 'text';
+          yearInput.value = f.year || '';
+          yearInput.placeholder = 'yr';
+          yearInput.style.cssText = 'width:44px; font-size:0.68rem; background:var(--bg-inset); border:1px solid var(--line); border-radius:4px; color:var(--ink); padding:3px 5px;';
+
+          const retryBtn = document.createElement('button');
+          retryBtn.type = 'button';
+          retryBtn.textContent = 'Retry';
+          retryBtn.style.cssText = 'font-size:0.68rem; padding:3px 8px; border-radius:4px;';
+
+          const runRetry = () => {
+            const newName = titleInput.value.trim();
+            if (!newName) return;
+            const oldKey = filmKey(f);
+            f.name = newName;
+            f.year = yearInput.value.trim();
+            delete resultsCache[oldKey];
+            saveFilms(films);
+            saveResultsCache(resultsCache);
+            renderFilms();
+            lookupFilm(f).then(() => saveResultsCache(resultsCache));
+          };
+          retryBtn.addEventListener('click', runRetry);
+          titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRetry(); });
+          yearInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runRetry(); });
+
+          row.appendChild(titleInput);
+          row.appendChild(yearInput);
+          row.appendChild(retryBtn);
+          fixLink.replaceWith(row);
+          titleInput.focus();
+        };
+        fixLink.addEventListener('click', openEditor);
+        fixLink.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openEditor(); } });
+        el.appendChild(fixLink);
+      }
+      return;
+    }
+    if (res.status === 'needs-confirmation'){
+      el.innerHTML = '';
+      el.className = 't-result err';
+      const label = document.createElement('span');
+      label.textContent = 'Did you mean:';
+      el.appendChild(label);
+
+      (res.suggestions || []).forEach(s => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = s.title + (s.year ? ' (' + s.year + ')' : '');
+        btn.className = 'suggestion-btn';
+        btn.addEventListener('click', () => {
+          if (f) confirmMatch(f, s);
+        });
+        el.appendChild(btn);
+      });
+
+      const dbg = document.createElement('span');
+      dbg.className = 't-ambiguous';
+      dbg.style.color = 'var(--ink-faint)';
+      dbg.style.cursor = 'help';
+      dbg.title = 'Searched TMDB for: "' + (res.debugSearchedAs || '?') + '"\nNone matched exactly — these are the closest TMDB results.';
       dbg.textContent = 'ⓘ match info';
       el.appendChild(dbg);
       return;
@@ -892,6 +973,7 @@
         a.rel = 'noopener';
         a.textContent = transactText;
         a.className = 'inline-transact';
+        a.style.color = 'inherit';
         a.style.textDecoration = 'underline';
         a.style.textUnderlineOffset = '2px';
         transactCol.appendChild(a);
@@ -916,12 +998,12 @@
         dbg.className = 't-ambiguous';
         dbg.style.color = 'var(--ink-faint)';
         dbg.style.cursor = 'help';
-        const allSvc = (res.debugAllIncluded && res.debugAllIncluded.length) ? res.debugAllIncluded.join(', ') : 'none listed';
+        const allSvc = (res.debugAllFlatrate && res.debugAllFlatrate.length) ? res.debugAllFlatrate.join(', ') : 'none listed';
         const reasonLabel = MATCH_REASON_LABELS[res.matchReason] || res.matchReason || 'unknown';
         dbg.title = 'TMDB matched: ' + res.debugTitle + ' (' + (res.debugYear || '?') + ', id ' + res.debugId + ')' +
           '\nMatch confidence: ' + reasonLabel +
           '\nChecked: ' + timeAgo(res.checkedAt) +
-          '\nAll included/free services TMDB lists (not just yours): ' + allSvc;
+          '\nAll subscription services TMDB lists (not just yours): ' + allSvc;
         dbg.textContent = 'ⓘ match info';
         meta.appendChild(dbg);
       }
@@ -940,7 +1022,7 @@
     const li = document.querySelector('li[data-key="' + CSS.escape(filmKey(f)) + '"]');
     if (li){
       const el = li.querySelector('.t-result');
-      if (el) applyResultToEl(el, res);
+      if (el) applyResultToEl(el, res, f);
     }
   }
 
@@ -954,11 +1036,11 @@
     let touched = false;
     Object.keys(resultsCache).forEach(key => {
       const res = resultsCache[key];
-      if (!res || res.status !== 'ok' || !res.debugAllIncluded) return;
-      const matched = res.debugAllIncluded.filter(name =>
+      if (!res || res.status !== 'ok' || !res.debugAllFlatrate) return;
+      const matched = res.debugAllFlatrate.filter(name =>
         onServices.some(s => servicesMatch(s.name, name))
       );
-      const other = res.debugAllIncluded.filter(name => !matched.includes(name));
+      const other = res.debugAllFlatrate.filter(name => !matched.includes(name));
       res.stream = matched.length > 0;
       res.streamServices = matched;
       res.otherStreamServices = other;
@@ -1057,7 +1139,7 @@
         const exact = results.filter(r => (r.title || '').trim().toLowerCase() === norm);
         if (exact.length) return { candidates: exact.slice(0, 3), reason: 'exact-title' };
       }
-      return { candidates: results.slice(0, 1), reason: 'popularity-fallback' };
+      return { candidates: results.slice(0, 3), reason: 'popularity-fallback' };
     }
     const exact = results.filter(r => (r.release_date || '').slice(0, 4) === String(year));
     if (exact.length) return { candidates: exact.slice(0, 3), reason: 'exact-year' };
@@ -1067,7 +1149,7 @@
       return ry && Math.abs(ry - parseInt(year, 10)) <= 1;
     });
     if (near.length) return { candidates: near.slice(0, 3), reason: 'near-year' };
-    return { candidates: results.slice(0, 1), reason: 'popularity-fallback' };
+    return { candidates: results.slice(0, 3), reason: 'popularity-fallback' };
   }
 
   const MATCH_REASON_LABELS = {
@@ -1075,6 +1157,7 @@
     'near-year': 'title match, year off by ≤1 (lower confidence)',
     'exact-title': 'exact title match',
     'popularity-fallback': 'no exact match — picked most popular result (lower confidence)',
+    'user-confirmed': 'you confirmed this from "did you mean"',
     'none': 'no results'
   };
 
@@ -1124,6 +1207,93 @@
     }
   }
 
+  // Given a set of TMDB candidates (already known to be the right movie, or
+  // the best guess), fetches provider data and builds the final result.
+  // Shared by the normal auto-match path and the user-confirmed "did you
+  // mean" path, so both end up with identical, fully-featured results.
+  async function finalizeMatch(f, candidates, matchReason){
+    // Try each candidate until one actually has provider data — the
+    // first result TMDB returns isn't always the one with data attached.
+    let primary = candidates[0];
+    let providers = await tmdbWatchProviders(primary.id);
+    let hasData = (providers.flatrate || []).length || (providers.rent || []).length || (providers.buy || []).length;
+    if (!hasData && candidates.length > 1){
+      for (let i = 1; i < candidates.length; i++){
+        const alt = await tmdbWatchProviders(candidates[i].id);
+        const altHasData = (alt.flatrate || []).length || (alt.rent || []).length || (alt.buy || []).length;
+        if (altHasData){
+          primary = candidates[i];
+          providers = alt;
+          hasData = true;
+          break;
+        }
+      }
+    }
+
+    const flatrate = providers.flatrate || [];
+    const rent = providers.rent || [];
+    const buy = providers.buy || [];
+    const tmdbLink = providers.link || null;
+
+    // Self-heal: if a flatrate provider matches one of your services by
+    // normalized name but that service's stored name is a variant
+    // (e.g. "Disney+" vs TMDB's "Disney Plus"), adopt TMDB's exact
+    // name/id going forward so future exact-match lookups stay reliable.
+    let servicesChanged = false;
+    flatrate.forEach(p => {
+      const svc = services.find(s => !s.tmdbId && servicesMatch(s.name, p.provider_name));
+      if (svc){
+        svc.name = p.provider_name;
+        svc.tmdbId = p.provider_id;
+        servicesChanged = true;
+      }
+    });
+    if (servicesChanged){
+      saveServices(services);
+      renderServices();
+    }
+
+    const onServices = services.filter(s => s.on);
+    const matchedStream = flatrate.filter(p =>
+      onServices.some(s => servicesMatch(s.name, p.provider_name))
+    );
+    const stream = matchedStream.length > 0;
+    const otherStream = flatrate.filter(p => !matchedStream.includes(p));
+
+    const res = {
+      status: 'ok',
+      stream,
+      streamServices: matchedStream.map(p => p.provider_name),
+      otherStreamServices: otherStream.map(p => p.provider_name),
+      link: tmdbLink,
+      rentServices: rent.map(p => p.provider_name),
+      buyServices: buy.map(p => p.provider_name),
+      ambiguous: candidates.length > 1 && !hasData,
+      rentPrice: null,
+      buyPrice: null,
+      rentLink: null,
+      buyLink: null,
+      debugTitle: primary.title,
+      debugYear: (primary.release_date || '').slice(0, 4),
+      debugId: primary.id,
+      debugAllFlatrate: flatrate.map(p => p.provider_name),
+      matchReason: matchReason,
+      checkedAt: Date.now()
+    };
+
+    if ((proxyUrl || keys.watchmode) && (rent.length || buy.length)){
+      const pricing = await resolveWatchmodePricing(f.name, primary.id);
+      if (pricing){
+        res.rentPrice = pricing.rentPrice;
+        res.buyPrice = pricing.buyPrice;
+        res.rentLink = pricing.rentLink;
+        res.buyLink = pricing.buyLink;
+      }
+    }
+
+    return res;
+  }
+
   // ---------- main lookup for one film ----------
   async function lookupFilm(f){
     setFilmResult(f, { status: 'pending' });
@@ -1141,102 +1311,51 @@
         return;
       }
 
-      // Try each candidate until one actually has provider data — the
-      // first result TMDB returns isn't always the one with data attached.
-      let primary = candidates[0];
-      let providers = await tmdbWatchProviders(primary.id);
-      let hasData = (providers.flatrate || []).length || (providers.free || []).length || (providers.ads || []).length || (providers.rent || []).length || (providers.buy || []).length;
-      if (!hasData && candidates.length > 1){
-        for (let i = 1; i < candidates.length; i++){
-          const alt = await tmdbWatchProviders(candidates[i].id);
-          const altHasData = (alt.flatrate || []).length || (alt.free || []).length || (alt.ads || []).length || (alt.rent || []).length || (alt.buy || []).length;
-          if (altHasData){
-            primary = candidates[i];
-            providers = alt;
-            hasData = true;
-            break;
-          }
-        }
+      // "popularity-fallback" means nothing matched the typed title (or
+      // title+year) exactly — most often a typo (confirmed real examples:
+      // "anotber", "Dead Poet Society"). Rather than silently guessing,
+      // which risks confidently attaching streaming data to the wrong
+      // movie, ask which of TMDB's actual results was meant. "near-year"
+      // stays auto-accepted — that's just a release-date discrepancy on an
+      // otherwise exact title match, not a real ambiguity.
+      if (matchReason === 'popularity-fallback'){
+        setFilmResult(f, {
+          status: 'needs-confirmation',
+          suggestions: candidates.map(c => ({
+            id: c.id,
+            title: c.title,
+            year: (c.release_date || '').slice(0, 4)
+          })),
+          debugSearchedAs: f.name + (f.year ? ' (' + f.year + ')' : '')
+        });
+        return;
       }
 
-      // TMDB splits "you can just watch this" into three separate buckets:
-      // flatrate (subscription, e.g. Netflix), free (no subscription needed,
-      // e.g. Tubi, Pluto TV), and ads (an ad-supported tier of a service).
-      // Only reading "flatrate" was the bug behind free ad-supported services
-      // like Tubi never registering as a match even when selected as one of
-      // your services — from the user's perspective those are all the same
-      // thing ("included, no separate rent/buy"), so they're combined here.
-      const flatrate = providers.flatrate || [];
-      const free = providers.free || [];
-      const ads = providers.ads || [];
-      const rent = providers.rent || [];
-      const buy = providers.buy || [];
-      const tmdbLink = providers.link || null;
-
-      const seenIncludedIds = new Set();
-      const included = [...flatrate, ...free, ...ads].filter(p => {
-        if (seenIncludedIds.has(p.provider_id)) return false; // a provider could in theory appear in more than one bucket
-        seenIncludedIds.add(p.provider_id);
-        return true;
-      });
-
-      // Self-heal: if an included provider matches one of your services by
-      // normalized name but that service's stored name is a variant
-      // (e.g. "Disney+" vs TMDB's "Disney Plus"), adopt TMDB's exact
-      // name/id going forward so future exact-match lookups stay reliable.
-      let servicesChanged = false;
-      included.forEach(p => {
-        const svc = services.find(s => !s.tmdbId && servicesMatch(s.name, p.provider_name));
-        if (svc){
-          svc.name = p.provider_name;
-          svc.tmdbId = p.provider_id;
-          servicesChanged = true;
-        }
-      });
-      if (servicesChanged){
-        saveServices(services);
-        renderServices();
-      }
-
-      const onServices = services.filter(s => s.on);
-      const matchedStream = included.filter(p =>
-        onServices.some(s => servicesMatch(s.name, p.provider_name))
-      );
-      const stream = matchedStream.length > 0;
-      const otherStream = included.filter(p => !matchedStream.includes(p));
-
-      const res = {
-        status: 'ok',
-        stream,
-        streamServices: matchedStream.map(p => p.provider_name),
-        otherStreamServices: otherStream.map(p => p.provider_name),
-        link: tmdbLink,
-        rentServices: rent.map(p => p.provider_name),
-        buyServices: buy.map(p => p.provider_name),
-        ambiguous: candidates.length > 1 && !hasData,
-        rentPrice: null,
-        buyPrice: null,
-        rentLink: null,
-        buyLink: null,
-        debugTitle: primary.title,
-        debugYear: (primary.release_date || '').slice(0, 4),
-        debugId: primary.id,
-        debugAllIncluded: included.map(p => p.provider_name),
-        matchReason: matchReason,
-        checkedAt: Date.now()
-      };
-
-      if ((proxyUrl || keys.watchmode) && (rent.length || buy.length)){
-        const pricing = await resolveWatchmodePricing(f.name, primary.id);
-        if (pricing){
-          res.rentPrice = pricing.rentPrice;
-          res.buyPrice = pricing.buyPrice;
-          res.rentLink = pricing.rentLink;
-          res.buyLink = pricing.buyLink;
-        }
-      }
-
+      const res = await finalizeMatch(f, candidates, matchReason);
       setFilmResult(f, res);
+    } catch(e){
+      setFilmResult(f, {
+        status: 'error',
+        errorStatus: (e && e.status) || null,
+        errorMessage: (e && e.message) || 'Unknown error'
+      });
+    }
+  }
+
+  // User picked a specific title from the "did you mean" suggestions —
+  // skip search entirely and go straight to fetching provider data for
+  // the exact TMDB id they chose.
+  async function confirmMatch(f, suggestion){
+    setFilmResult(f, { status: 'pending' });
+    try {
+      const candidate = {
+        id: suggestion.id,
+        title: suggestion.title,
+        release_date: suggestion.year ? suggestion.year + '-01-01' : ''
+      };
+      const res = await finalizeMatch(f, [candidate], 'user-confirmed');
+      setFilmResult(f, res);
+      saveResultsCache(resultsCache);
     } catch(e){
       setFilmResult(f, {
         status: 'error',
