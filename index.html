@@ -1239,7 +1239,14 @@
         const alt = await tmdbWatchProviders(candidates[i].id);
         const altHasData = streamCategories(alt).length || (alt.rent || []).length || (alt.buy || []).length;
         if (altHasData){
-          primary = candidates[i];
+          // Use the alternate's provider data, but keep crediting `primary`
+          // (the more popular/canonical candidate) as the match — e.g. TMDB
+          // sometimes carries duplicate entries for a recent release where
+          // the popular one has no provider data yet but a thinner duplicate
+          // does. Previously this reassigned primary to the duplicate too,
+          // which pinned the "match info" tooltip and its TMDB link to the
+          // wrong (incomplete) entry even though the availability data
+          // itself was already correct either way.
           providers = alt;
           hasData = true;
           break;
