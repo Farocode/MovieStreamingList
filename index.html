@@ -485,7 +485,7 @@
   const LS_PROXY_URL = 'watchlist:proxyUrl';
   const LS_RESULTS = 'watchlist:results';
   const LS_RESULTS_VERSION = 'watchlist:resultsVersion';
-  const RESULTS_SCHEMA_VERSION = 5; // bump whenever the shape OR matching logic of a cached result changes
+  const RESULTS_SCHEMA_VERSION = 6; // bump whenever the shape OR matching logic of a cached result changes
   const LS_THEME = 'watchlist:theme';
   const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — catches new releases/removals without re-checking constantly
 
@@ -1009,7 +1009,7 @@
         dbg.title = 'TMDB matched: ' + res.debugTitle + ' (' + (res.debugYear || '?') + ', id ' + res.debugId + ')' +
           '\nMatch confidence: ' + reasonLabel +
           '\nChecked: ' + timeAgo(res.checkedAt) +
-          '\nAll subscription services TMDB lists (not just yours): ' + allSvc;
+          '\nAll streaming services TMDB lists, incl. free/ad-supported (not just yours): ' + allSvc;
         dbg.textContent = 'ⓘ match info';
         meta.appendChild(dbg);
       }
@@ -1222,11 +1222,22 @@
     // first result TMDB returns isn't always the one with data attached.
     let primary = candidates[0];
     let providers = await tmdbWatchProviders(primary.id);
-    let hasData = (providers.flatrate || []).length || (providers.rent || []).length || (providers.buy || []).length;
+    // TMDB splits "you can watch this without paying extra" across three
+    // categories: flatrate (subscription, e.g. Netflix), free, and ads
+    // (ad-supported, e.g. Tubi, Pluto TV). All three mean the same thing
+    // to a user picking from their own service list — only rent/buy is
+    // actually a separate transaction. Treating flatrate as the only
+    // "streaming" category was the bug: Tubi/Pluto-type services would
+    // never register as "yours" even when selected, because TMDB lists
+    // them under free/ads, not flatrate.
+    const streamCategories = p => [
+      ...(p.flatrate || []), ...(p.free || []), ...(p.ads || [])
+    ];
+    let hasData = streamCategories(providers).length || (providers.rent || []).length || (providers.buy || []).length;
     if (!hasData && candidates.length > 1){
       for (let i = 1; i < candidates.length; i++){
         const alt = await tmdbWatchProviders(candidates[i].id);
-        const altHasData = (alt.flatrate || []).length || (alt.rent || []).length || (alt.buy || []).length;
+        const altHasData = streamCategories(alt).length || (alt.rent || []).length || (alt.buy || []).length;
         if (altHasData){
           primary = candidates[i];
           providers = alt;
@@ -1236,15 +1247,23 @@
       }
     }
 
-    const flatrate = providers.flatrate || [];
+    // Dedupe in case TMDB ever lists the same provider in more than one
+    // of the three categories (hasn't been observed, but cheap to guard).
+    const seenStreamIds = new Set();
+    const flatrate = streamCategories(providers).filter(p => {
+      if (seenStreamIds.has(p.provider_id)) return false;
+      seenStreamIds.add(p.provider_id);
+      return true;
+    });
     const rent = providers.rent || [];
     const buy = providers.buy || [];
     const tmdbLink = providers.link || null;
 
-    // Self-heal: if a flatrate provider matches one of your services by
-    // normalized name but that service's stored name is a variant
-    // (e.g. "Disney+" vs TMDB's "Disney Plus"), adopt TMDB's exact
-    // name/id going forward so future exact-match lookups stay reliable.
+    // Self-heal: if a flatrate/free/ads provider matches one of your
+    // services by normalized name but that service's stored name is a
+    // variant (e.g. "Disney+" vs TMDB's "Disney Plus"), adopt TMDB's
+    // exact name/id going forward so future exact-match lookups stay
+    // reliable.
     let servicesChanged = false;
     flatrate.forEach(p => {
       const svc = services.find(s => !s.tmdbId && servicesMatch(s.name, p.provider_name));

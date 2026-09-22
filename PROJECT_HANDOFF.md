@@ -75,6 +75,20 @@ real reasoning behind current order, ask before reshuffling again.
   - **Pattern going forward:** if a service "isn't matching," check the
     actual TMDB provider name via a web search before assuming it's a code
     bug. It's been a real naming mismatch every time so far.
+  - **Free/ad-supported services live in different TMDB categories, not
+    "flatrate."** Found via Michael reporting Tubi giving "inconsistent
+    results" (sometimes matched, sometimes not, for movies he'd confirmed
+    were actually on Tubi). Root cause: TMDB's `/watch/providers` response
+    splits availability into `flatrate` (paid subscription), `free`, and
+    `ads` (ad-supported) — the code only ever read `flatrate`. Tubi and
+    Pluto TV are typically filed under `free`/`ads`, so they'd only show as
+    "yours" on the rare title where TMDB happened to also list them under
+    `flatrate` — hence "inconsistent." Fixed by merging all three
+    categories into one streaming bucket before matching against selected
+    services (deduped by provider_id). `RESULTS_SCHEMA_VERSION` bumped to
+    force a fresh fetch, since cached raw data from before the fix only
+    ever captured `flatrate` and can't be recomputed from what's already
+    stored.
 - **Exact title match must always beat popularity**, or "Dolemite" resolves to
   "Dolemite Is My Name." Popularity is only a tiebreaker when nothing matches
   exactly. This was broken once by an earlier "always sort by popularity" fix
@@ -140,6 +154,51 @@ management** are top of the list.
 - Deferred: a Python script (manual or scheduled GitHub Action) that
   snapshots the personal watchlist to static JSON for zero-live-API personal
   use — floated once, not pursued
+
+## Spec: typo-tolerant title matching (the one item worth building next)
+
+This is the only queued item with enough real-world evidence to justify a
+real spec rather than a bullet point. Four confirmed failures so far, all
+the same root cause: TMDB's `/search/movie` doesn't reliably compensate for
+character-level typos (as opposed to the missing-"The" case, which is
+already handled).
+
+**Confirmed failures:**
+- "anotber" → "another" (transposed letter)
+- "Corsican Brothers" → nothing (possibly also a real TMDB data gap — "The
+  Corsican Brothers" (1941) and "Cheech & Chong's The Corsican Brothers"
+  (1984) both exist; unresolved which factor dominates)
+- "Dead Poet Society" → "Dead Poets Society" (missing letter), hit twice
+
+**Why the current approach doesn't catch these:** `tmdbSearchMovieRobust`
+only tries two literal strings — the typed title, and "The " + the typed
+title. A genuine misspelling doesn't match either, so it falls through to
+`pickCandidates`'s no-exact-match branch, which just takes the single most
+popular raw result. If TMDB's own search returned zero raw results for the
+misspelled query (likely for "anotber" and "Dead Poet Society"), there's
+nothing for that fallback to even work with.
+
+**Options, roughly in order of effort:**
+1. **Client-side fuzzy re-ranking** — fetch a broader net of TMDB candidates
+   (e.g. search on individual significant words, not just the full string)
+   and score them by edit-distance against the typed title, not just exact
+   match. Moderate effort, no new dependencies.
+2. **"Did you mean" surfaced to the user** — when confidence is low (see the
+   existing `matchReason` field, already tracks this), instead of silently
+   guessing or showing "no match found," show the top 1-3 candidates TMDB
+   *did* return and let the user pick. Lower engineering risk than trying
+   to auto-correct, since it never guesses wrong silently — it just asks.
+   Could reuse the existing "ⓘ match info" pattern for the UI.
+3. **A small Levenshtein-distance library** (or a ~20-line hand-rolled
+   implementation, edit distance doesn't need a dependency) to compare the
+   typed title against candidate titles TMDB returns for partial/word-level
+   queries, not just the exact string.
+
+**Recommended starting point if this gets picked back up:** option 2 (did-
+you-mean) is the best effort-to-value ratio — it directly fixes all four
+confirmed failures (the user picks the right one from a short list) without
+the risk of a fuzzy algorithm confidently picking the *wrong* movie, which
+would be a worse failure mode than the current "no match found."
 
 ## Working style notes for this project specifically
 

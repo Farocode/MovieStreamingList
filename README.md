@@ -117,6 +117,10 @@ things worth knowing:
   session on next load, not just fresh installs — added as off, never
   overwriting anything you've already set, and never duplicating something
   you already have under a different name.
+- "Streaming" counts both subscription services and free, ad-supported ones
+  (Tubi, Pluto TV) the same way — TMDB files those under separate data
+  categories internally, but to you they're both "just watch it, no extra
+  cost," so the tool treats them as one bucket.
 - Every result has a small "ⓘ match info" hover showing exactly which TMDB
   title/year it matched, a rough confidence label (exact title+year vs. a
   popularity fallback with nothing exact), when it was last checked, and
